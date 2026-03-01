@@ -6,5 +6,4 @@ screenshots/
 *.tsbuildinfo
 wasm/target/
 wasm/pkg/
-fonts/
 scripts/tex/tmp/
