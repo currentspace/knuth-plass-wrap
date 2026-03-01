@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Knuth Word Wrap</title>
+    <style>
+      .card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+      @media (max-width: 900px) { .card-grid { grid-template-columns: 1fr; } }
+    </style>
   </head>
   <body>
     <div id="root"></div>

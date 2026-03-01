@@ -234,7 +234,7 @@ function CardArea({
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 24 }}>
+      <div className="card-grid">
         <CSSJustifyCard
           text={text}
           font={styledFont}
