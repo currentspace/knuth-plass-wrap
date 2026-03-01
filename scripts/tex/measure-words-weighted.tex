@@ -1,0 +1,52 @@
+% LuaLaTeX template for measuring word widths at specific size/weight
+% Placeholders: __FONT_PATH_DIR__, __FONT_FILE__, __RAW_FEATURE__,
+%               __FONT_SIZE__, __LEADING__, __WORDS__
+\documentclass{article}
+\usepackage{fontspec}
+\usepackage{luacode}
+
+\setmainfont[
+  Path=__FONT_PATH_DIR__/,
+  __RAW_FEATURE__
+  Ligatures=NoCommon,
+  Kerning=On
+]{__FONT_FILE__}
+
+\begin{document}
+\fontsize{__FONT_SIZE__pt}{__LEADING__pt}\selectfont
+
+\begin{luacode}
+local words = {__WORDS__}
+local fid = font.current()
+
+local sp_node = node.new("glyph")
+sp_node.font = fid
+sp_node.char = 0xA0
+local sp_width = node.dimensions(sp_node) / 65536
+node.free(sp_node)
+texio.write_nl("TEXMEASURE_SPACE: " .. string.format("%.6f", sp_width))
+
+for _, w in ipairs(words) do
+  local head = nil
+  local tail = nil
+  for _, c in utf8.codes(w) do
+    local g = node.new("glyph")
+    g.font = fid
+    g.char = c
+    if tail then
+      tail.next = g
+    else
+      head = g
+    end
+    tail = g
+  end
+  if head then
+    local hlist = node.hpack(head)
+    local width = hlist.width / 65536
+    texio.write_nl("TEXMEASURE: " .. w .. " " .. string.format("%.6f", width))
+    node.flush_list(hlist)
+  end
+end
+\end{luacode}
+
+\end{document}

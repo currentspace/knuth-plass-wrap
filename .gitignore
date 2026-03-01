@@ -1,0 +1,10 @@
+node_modules
+dist
+screenshot.png
+screenshot-*.png
+screenshots/
+*.tsbuildinfo
+wasm/target/
+wasm/pkg/
+fonts/
+scripts/tex/tmp/

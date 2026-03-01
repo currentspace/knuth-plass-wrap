@@ -1,0 +1,105 @@
+{
+  "name": "knuth-plass-wrap",
+  "version": "1.0.1",
+  "type": "module",
+  "description": "TeX-quality Knuth-Plass line breaking for the web, powered by HarfBuzz WASM",
+  "license": "MIT",
+  "author": "Brian Meek",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/currentspace/knuth-plass-wrap"
+  },
+  "homepage": "https://github.com/currentspace/knuth-plass-wrap#readme",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/pkg-index.d.ts",
+  "unpkg": "dist/knuth-plass-wrap.umd.js",
+  "jsdelivr": "dist/knuth-plass-wrap.umd.js",
+  "exports": {
+    ".": {
+      "types": "./dist/pkg-index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core.js",
+      "require": "./dist/core.cjs"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./node": {
+      "types": "./dist/core/wasm-node.d.ts",
+      "import": "./dist/core-node.js",
+      "require": "./dist/core-node.cjs"
+    },
+    "./wasm/*": "./dist/wasm/*"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "knuth-plass",
+    "line-breaking",
+    "typography",
+    "justification",
+    "harfbuzz",
+    "wasm",
+    "react",
+    "text-layout"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build:wasm": "cd wasm && wasm-pack build --target web --release",
+    "build:lib": "vite build && vite build --mode umd && tsc -p tsconfig.build.json",
+    "build": "pnpm build:wasm && pnpm build:lib",
+    "build:demo": "vite build --mode demo",
+    "preview": "vite preview",
+    "screenshot": "node --import tsx scripts/screenshot.ts",
+    "generate:presets": "node --import tsx scripts/generate-preset-pngs.ts",
+    "lint": "eslint .",
+    "test": "cd wasm && cargo test",
+    "test:hypher": "cd crates/hypher-dynamic && cargo test",
+    "test:ssr": "node --import tsx scripts/test-ssr.ts",
+    "test:e2e": "node --import tsx scripts/test-all-presets.ts",
+    "test:e2e:pw": "playwright test",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.3",
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^25.3.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "eslint": "^9.39.3",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^16.5.0",
+    "hyphen": "^1.14.1",
+    "jiti": "^2.6.1",
+    "playwright": "^1.52.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.56.1",
+    "vite": "^6.3.0"
+  },
+  "dependencies": {
+    "wawoff2": "^2.0.1"
+  }
+}

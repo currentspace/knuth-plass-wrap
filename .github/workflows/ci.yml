@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-rust:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test
+        working-directory: wasm
+      - run: cargo test
+        working-directory: crates/hypher-dynamic
+      - name: Check harfrust-lite (no shapers)
+        run: cargo check --no-default-features --features std
+        working-directory: crates/harfrust-lite
+      - name: Check harfrust-lite (all features)
+        run: cargo check --all-features
+        working-directory: crates/harfrust-lite
+
+  build:
+    name: Build & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Report WASM size
+        run: |
+          SIZE=$(stat -c%s dist/wasm/kp_break_wasm_bg.wasm)
+          GZIP_SIZE=$(gzip -c dist/wasm/kp_break_wasm_bg.wasm | wc -c)
+          echo "### WASM binary size" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Raw | ${SIZE} bytes ($((SIZE / 1024)) KB) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Gzipped | ${GZIP_SIZE} bytes ($((GZIP_SIZE / 1024)) KB) |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify hyphenation data in dist
+        run: |
+          test -f dist/wasm/hyphenation/en.bin || { echo "FAIL: en.bin missing"; exit 1; }
+          test -f dist/wasm/hyphenation/de.bin || { echo "FAIL: de.bin missing"; exit 1; }
+          LANG_COUNT=$(ls dist/wasm/hyphenation/*.bin | wc -l)
+          echo "Found $LANG_COUNT hyphenation data files"
+          test "$LANG_COUNT" -eq 17 || { echo "FAIL: expected 17 .bin files, got $LANG_COUNT"; exit 1; }
+
+      - run: pnpm lint
+      - run: pnpm test:ssr
