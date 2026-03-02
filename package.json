@@ -1,6 +1,6 @@
 {
   "name": "knuth-plass-wrap",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
   "description": "TeX-quality Knuth-Plass line breaking for the web, powered by HarfBuzz WASM",
   "license": "MIT",
