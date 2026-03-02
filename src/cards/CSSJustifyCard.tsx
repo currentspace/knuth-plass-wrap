@@ -9,11 +9,13 @@ export function CSSJustifyCard({
   font,
   lineWidth,
   hyphenate,
+  sourceUrl,
 }: {
   text: string;
   font: Font;
   lineWidth: number;
   hyphenate: boolean;
+  sourceUrl?: string;
 }): ReactNode {
   const lh = font.lineHeight ?? Math.round(font.size * 1.6);
   const rendered = useMemo(
@@ -25,6 +27,7 @@ export function CSSJustifyCard({
       label="CSS text-align: justify"
       accent="#6a4a8a"
       note="browser native · greedy"
+      sourceUrl={sourceUrl}
     >
       <div
         style={

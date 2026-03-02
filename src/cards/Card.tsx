@@ -4,11 +4,13 @@ export function Card({
   label,
   accent,
   note,
+  sourceUrl,
   children,
 }: {
   label: string;
   accent: string;
   note?: string;
+  sourceUrl?: string;
   children: ReactNode;
 }): ReactNode {
   return (
@@ -53,6 +55,17 @@ export function Card({
           >
             {note}
           </span>
+        )}
+        {sourceUrl && (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="source-link"
+            style={{ marginLeft: "auto" }}
+          >
+            source &#8599;
+          </a>
         )}
       </div>
       <div

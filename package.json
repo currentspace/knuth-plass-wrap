@@ -9,7 +9,7 @@
     "type": "git",
     "url": "https://github.com/currentspace/knuth-plass-wrap"
   },
-  "homepage": "https://github.com/currentspace/knuth-plass-wrap#readme",
+  "homepage": "https://knuth-plass-wrap.current.space",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/pkg-index.d.ts",
@@ -39,7 +39,15 @@
     "./wasm/*": "./dist/wasm/*"
   },
   "files": [
-    "dist"
+    "dist/*.js",
+    "dist/*.cjs",
+    "dist/*.d.ts",
+    "dist/*.d.ts.map",
+    "dist/core/",
+    "dist/react/",
+    "dist/lib/",
+    "dist/wasm/",
+    "dist/knuth-plass-wrap.umd.js"
   ],
   "sideEffects": false,
   "keywords": [

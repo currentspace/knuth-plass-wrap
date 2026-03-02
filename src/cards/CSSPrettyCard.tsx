@@ -9,11 +9,13 @@ export function CSSPrettyCard({
   font,
   lineWidth,
   hyphenate,
+  sourceUrl,
 }: {
   text: string;
   font: Font;
   lineWidth: number;
   hyphenate: boolean;
+  sourceUrl?: string;
 }): ReactNode {
   const lh = font.lineHeight ?? Math.round(font.size * 1.6);
   const rendered = useMemo(
@@ -25,6 +27,7 @@ export function CSSPrettyCard({
       label="CSS text-wrap: pretty"
       accent="#8a6a3a"
       note="browser native · justified"
+      sourceUrl={sourceUrl}
     >
       <div
         style={

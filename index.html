@@ -7,6 +7,79 @@
     <style>
       .card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
       @media (max-width: 900px) { .card-grid { grid-template-columns: 1fr; } }
+
+      .badges-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+      .badges-row img { height: 20px; }
+
+      .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 18px; }
+      .hero-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-family: "DM Mono", "SF Mono", Menlo, monospace;
+        font-size: 12px; font-weight: 500; letter-spacing: 0.04em;
+        padding: 8px 16px; border-radius: 6px; text-decoration: none;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .hero-btn-primary {
+        background: #2a2623; color: #f4f1ec; border: 1px solid #2a2623;
+      }
+      .hero-btn-primary:hover { background: #3d3632; }
+
+      .install-tabs { margin-top: 18px; }
+      .install-tabs-bar { display: flex; gap: 0; }
+      .install-tab {
+        font-family: "DM Mono", "SF Mono", Menlo, monospace;
+        font-size: 11px; padding: 5px 12px; border: 1px solid #d4cfc8;
+        background: #fff; color: #716b64; cursor: pointer;
+        border-bottom: none; position: relative; top: 1px;
+      }
+      .install-tab:first-child { border-radius: 6px 0 0 0; }
+      .install-tab:last-child { border-radius: 0 6px 0 0; }
+      .install-tab[data-active="true"] {
+        background: #2a2623; color: #f4f1ec; border-color: #2a2623;
+        font-weight: 600; z-index: 1;
+      }
+      .install-code {
+        font-family: "DM Mono", "SF Mono", Menlo, monospace;
+        font-size: 13px; background: #2a2623; color: #e8e4de;
+        padding: 12px 16px; border-radius: 0 6px 6px 6px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      }
+      .install-copy {
+        background: none; border: 1px solid #555; color: #a09890;
+        font-family: "DM Mono", "SF Mono", Menlo, monospace;
+        font-size: 11px; padding: 3px 10px; border-radius: 4px; cursor: pointer;
+        white-space: nowrap; transition: color 0.15s, border-color 0.15s;
+      }
+      .install-copy:hover { color: #e8e4de; border-color: #888; }
+
+      .code-example {
+        margin-top: 20px; background: #2a2623; color: #e8e4de;
+        border-radius: 8px; padding: 18px 20px; overflow-x: auto;
+        font-family: "DM Mono", "SF Mono", Menlo, monospace;
+        font-size: 12.5px; line-height: 1.7;
+      }
+      .code-example .kw { color: #c59a6a; }
+      .code-example .str { color: #8abf7c; }
+      .code-example .cmt { color: #6b6560; }
+      .code-example .tag { color: #6ab0c3; }
+      .code-example .attr { color: #c59a6a; }
+
+      .footer-links {
+        display: flex; flex-wrap: wrap; gap: 8px 20px;
+        font-family: "DM Mono", "SF Mono", Menlo, monospace;
+        font-size: 12px; margin-top: 18px;
+      }
+      .footer-links a {
+        color: #7a5a3a; text-decoration: none; border-bottom: 1px solid transparent;
+      }
+      .footer-links a:hover { border-bottom-color: #7a5a3a; }
+
+      .source-link {
+        font-family: "DM Mono", "SF Mono", Menlo, monospace;
+        font-size: 10px; color: var(--muted); text-decoration: none;
+        border-bottom: 1px solid transparent; transition: border-color 0.15s;
+      }
+      .source-link:hover { border-bottom-color: var(--muted); }
     </style>
   </head>
   <body>

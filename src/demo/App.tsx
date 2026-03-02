@@ -25,6 +25,64 @@ import { FontPicker } from "./FontPicker";
 
 const STORAGE_KEY = "kp-prefs";
 
+const REPO_URL = "https://github.com/currentspace/knuth-plass-wrap";
+const REPO_BLOB = `${REPO_URL}/blob/main`;
+
+const INSTALL_CMDS: Record<string, string> = {
+  pnpm: "pnpm add knuth-plass-wrap",
+  npm: "npm install knuth-plass-wrap",
+  yarn: "yarn add knuth-plass-wrap",
+};
+
+function InstallSnippet(): ReactNode {
+  const [mgr, setMgr] = useState("pnpm");
+  const [copied, setCopied] = useState(false);
+  const cmd = INSTALL_CMDS[mgr];
+  return (
+    <div className="install-tabs">
+      <div className="install-tabs-bar">
+        {Object.keys(INSTALL_CMDS).map((k) => (
+          <button
+            key={k}
+            className="install-tab"
+            data-active={k === mgr}
+            onClick={() => setMgr(k)}
+          >
+            {k}
+          </button>
+        ))}
+      </div>
+      <div className="install-code">
+        <code>{cmd}</code>
+        <button
+          className="install-copy"
+          onClick={() => {
+            void navigator.clipboard.writeText(cmd);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? "copied" : "copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function QuickStart(): ReactNode {
+  return (
+    <div className="code-example">
+      <div><span className="kw">import</span> {"{"} KnuthPlassWrap {"}"} <span className="kw">from</span> <span className="str">"knuth-plass-wrap/react"</span>;</div>
+      <div><span className="kw">import</span> {"{"} init {"}"} <span className="kw">from</span> <span className="str">"knuth-plass-wrap/core"</span>;</div>
+      <div style={{ opacity: 0.4 }}>&nbsp;</div>
+      <div><span className="cmt">{"// "}{`Load WASM + font, then render`}</span></div>
+      <div><span className="kw">await</span> init({"{ "}wasmUrl, fontBinary{" }"});</div>
+      <div style={{ opacity: 0.4 }}>&nbsp;</div>
+      <div>{"<"}<span className="tag">KnuthPlassWrap</span> <span className="attr">text</span>=<span className="str">{"{paragraph}"}</span> <span className="attr">width</span>=<span className="str">{"{480}"}</span> {"/>"}</div>
+    </div>
+  );
+}
+
 function loadPrefs(): Record<string, unknown> {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Record<
@@ -184,6 +242,7 @@ function HarfrustCardArea({
       wdthRange={wdthRange}
       hyphenate={hyphenate}
       similarity={similarity}
+      sourceUrl={`${REPO_BLOB}/src/cards/KPHarfrustCard.tsx`}
     />
   );
 }
@@ -240,12 +299,14 @@ function CardArea({
           font={styledFont}
           lineWidth={lineWidth}
           hyphenate={hyphenate}
+          sourceUrl={`${REPO_BLOB}/src/cards/CSSJustifyCard.tsx`}
         />
         <CSSPrettyCard
           text={text}
           font={styledFont}
           lineWidth={lineWidth}
           hyphenate={hyphenate}
+          sourceUrl={`${REPO_BLOB}/src/cards/CSSPrettyCard.tsx`}
         />
         <Suspense fallback={harfrustFallback}>
           <HarfrustCardArea
@@ -432,6 +493,22 @@ export default function App(): ReactNode {
             browser-native layout with Knuth–Plass optimal breaking and the
             authoritative LaTeX reference.
           </p>
+
+          <div className="badges-row">
+            <img alt="npm version" src="https://img.shields.io/npm/v/knuth-plass-wrap?color=%237a5a3a&labelColor=%23f4f1ec" />
+            <img alt="npm bundle size" src="https://img.shields.io/bundlephobia/minzip/knuth-plass-wrap?color=%237a5a3a&labelColor=%23f4f1ec" />
+            <img alt="GitHub stars" src="https://img.shields.io/github/stars/currentspace/knuth-plass-wrap?style=flat&color=%237a5a3a&labelColor=%23f4f1ec" />
+            <img alt="license" src="https://img.shields.io/npm/l/knuth-plass-wrap?color=%237a5a3a&labelColor=%23f4f1ec" />
+          </div>
+
+          <div className="hero-actions">
+            <a className="hero-btn hero-btn-primary" href={REPO_URL} target="_blank" rel="noopener noreferrer">
+              GitHub
+            </a>
+          </div>
+
+          <InstallSnippet />
+          <QuickStart />
         </header>
 
         <div
@@ -631,7 +708,7 @@ export default function App(): ReactNode {
 
         <div
           style={{
-            marginBottom: 52,
+            marginBottom: 24,
             background: "#eae7e1",
             borderRadius: 8,
             padding: "20px 24px",
@@ -656,6 +733,25 @@ export default function App(): ReactNode {
             identical font file and Knuth–Plass parameters — the gold standard
             for comparison.
           </Note>
+        </div>
+
+        <div style={{ paddingBottom: 52 }}>
+          <div className="footer-links">
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://www.npmjs.com/package/knuth-plass-wrap" target="_blank" rel="noopener noreferrer">npm</a>
+            <a href="https://unpkg.com/knuth-plass-wrap/" target="_blank" rel="noopener noreferrer">unpkg</a>
+            <a href="https://cdn.jsdelivr.net/npm/knuth-plass-wrap/" target="_blank" rel="noopener noreferrer">jsdelivr</a>
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--mono)",
+              fontSize: 11,
+              color: "var(--muted)",
+              marginTop: 12,
+            }}
+          >
+            MIT License
+          </div>
         </div>
       </div>
     </div>

@@ -29,6 +29,7 @@ export interface KPHarfrustCardProps {
   hyphenate?: boolean;
   similarity?: boolean;
   wdthRange?: WdthRange | null;
+  sourceUrl?: string;
   className?: string;
   style?: CSSProperties;
 }
@@ -66,6 +67,7 @@ export function KPHarfrustCard({
   hyphenate = false,
   similarity = true,
   wdthRange,
+  sourceUrl,
   className,
   style: containerStyle,
 }: KPHarfrustCardProps): ReactNode {
@@ -137,7 +139,7 @@ export function KPHarfrustCard({
   const shaping = shapingCSS(liga) as CSSProperties;
 
   return (
-    <Card label="Knuth–Plass — Harfrust" accent="#1a6b5a" note={note}>
+    <Card label="Knuth–Plass — Harfrust" accent="#1a6b5a" note={note} sourceUrl={sourceUrl}>
       <div className={className} style={{ width: deferredWidth, ...containerStyle }}>
         {lines.map((line, i) => {
           const isJustified = !line.last && line.words.length > 1;
