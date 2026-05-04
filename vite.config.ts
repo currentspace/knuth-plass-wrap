@@ -48,10 +48,19 @@ function rewriteWasmImportPlugin(): Plugin {
   return {
     name: "rewrite-wasm-import",
     renderChunk(code) {
-      return code.replace(
-        /["'][./]*wasm\/pkg\/kp_break_wasm\.js["']/g,
-        '"./wasm/kp_break_wasm.js"',
-      );
+      return code
+        .replace(
+          /["'][./]*wasm\/pkg\/kp_break_wasm\.js["']/g,
+          '"./wasm/kp_break_wasm.js"',
+        )
+        .replace(
+          /new URL\(["']\.\.\/\.\.\/wasm\/pkg\/hyphenation\/["'], import\.meta\.url\)/g,
+          'new URL("./wasm/hyphenation/", import.meta.url)',
+        )
+        .replace(
+          /(["'])\.\.\/\.\.\/wasm\/pkg\/hyphenation\/\1/g,
+          '"./wasm/hyphenation/"',
+        );
     },
   };
 }

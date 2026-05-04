@@ -12,10 +12,6 @@ fn main() {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    println!(
-        "cargo:rustc-env=WASM_BUILD_ID={}-{}",
-        git_hash.trim(),
-        ts
-    );
+    println!("cargo:rustc-env=WASM_BUILD_ID={}-{}", git_hash.trim(), ts);
     println!("cargo:rerun-if-changed=src/lib.rs");
 }

@@ -3,13 +3,17 @@ export type {
   HzLine,
   LayoutOptions,
   InitInput,
+  BinaryData,
 } from "./types";
 
 export {
   init,
   isReady,
   layoutParagraph,
+  layoutParagraphWithFont,
   measureWord,
+  registerLayoutFont,
+  unregisterLayoutFont,
 } from "./wasm";
 
 export {

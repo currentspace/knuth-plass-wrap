@@ -12,12 +12,19 @@
 HarfRust is a Rust port of [HarfBuzz](https://github.com/harfbuzz/harfbuzz) text shaping engine.
 See [Major changes](#major-changes) below for major differences between HarfRust and HarfBuzz.
 
+## Local fork note
+
+This `harfrust-lite` crate is a vendored fork of upstream HarfRust 0.6.0 for
+`knuth-plass-wrap`. The source is kept close to upstream, with local Cargo
+metadata and feature gates around optional script shapers so the WASM build can
+compile only the shaping code it needs.
+
 HarfRust started as a fork of [RustyBuzz](https://docs.rs/rustybuzz) to explore porting from `ttf-parser` to
 [`read-fonts`](https://docs.rs/read-fonts) to avoid shipping (and maintaining)
 multiple implementations of core font parsing for [`skrifa`](https://docs.rs/skrifa) consumers.
 Further context in https://github.com/googlefonts/fontations/issues/956.
 
-Matches HarfBuzz [v12.3.0](https://github.com/harfbuzz/harfbuzz/releases/tag/12.3.0).
+Matches HarfBuzz [v13.0.0](https://github.com/harfbuzz/harfbuzz/releases/tag/13.0.0).
 
 ## Why?
 
@@ -54,7 +61,7 @@ HarfRust is not a full port of HarfBuzz. HarfBuzz (C++ edition) can roughly be s
 1. shaping, ported to HarfRust
 2. Unicode routines, ported to HarfRust
 3. font parsing, handled by [`read-fonts`](https://docs.rs/read-fonts)
-4. subsetting, handled by [`klippa`](https://github.com/googlefonts/fontations/tree/main/klippa)
+4. subsetting, handled by [`skera`](https://github.com/googlefonts/fontations/tree/main/skera)
 5. custom containers and utilities (HarfBuzz doesn't use C++ standard library), reimplemented in [`fontations`](https://github.com/googlefonts/fontations) where appropriate (e.g. int set)
 6. glue for system/3rd party libraries, not ported
 

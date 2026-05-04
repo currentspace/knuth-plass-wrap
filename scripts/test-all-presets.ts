@@ -3,8 +3,8 @@
  * Single page load per browser, click through presets sequentially.
  * Usage: node --import tsx scripts/test-all-presets.ts
  */
-import { spawn, type ChildProcess } from "child_process";
-import { chromium, webkit, type Page } from "playwright";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
+import { chromium, webkit, type Browser, type Page } from "playwright";
 
 const PRESETS = [
   "Classic Knuth",
@@ -14,6 +14,75 @@ const PRESETS = [
   "Tight Mono",
   "Wide Light",
 ];
+
+const DEV_PORT = Number(process.env.KP_TEST_PORT ?? 5178);
+const BASE_URL =
+  process.env.KP_TEST_BASE_URL ?? `http://127.0.0.1:${DEV_PORT}`;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForServer(url: string, server: ChildProcess): Promise<void> {
+  let lastError = "";
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (server.exitCode !== null) {
+      throw new Error(`Dev server exited early with code ${server.exitCode}`);
+    }
+
+    try {
+      const response = await fetch(url);
+      if (response.ok) return;
+      lastError = `${response.status} ${response.statusText}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await delay(500);
+  }
+
+  throw new Error(`Timed out waiting for dev server at ${url}: ${lastError}`);
+}
+
+async function startDevServer(): Promise<ChildProcess | null> {
+  if (process.env.KP_TEST_BASE_URL) {
+    return null;
+  }
+
+  const server = spawn(
+    "pnpm",
+    ["dev", "--host", "127.0.0.1", "--port", String(DEV_PORT), "--strictPort"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        FORCE_COLOR: "0",
+        NO_COLOR: "1",
+      },
+      stdio: "ignore",
+    },
+  );
+  await waitForServer(BASE_URL, server);
+  return server;
+}
+
+async function stopDevServer(server: ChildProcess | null): Promise<void> {
+  if (!server || server.exitCode !== null) {
+    return;
+  }
+
+  server.kill("SIGTERM");
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      server.once("exit", () => resolve());
+    }),
+    delay(2000).then(() => {
+      if (server.exitCode === null) {
+        server.kill("SIGKILL");
+      }
+    }),
+  ]);
+}
 
 function measureScript(presetName: string): string {
   // Self-contained JS that clicks a preset, waits, then measures Harfrust lines.
@@ -89,7 +158,7 @@ function reportPreset(engine: string, preset: string, lines: LineResult[]) {
   );
   const ok = overflows.length === 0 && gaps.length === 0;
 
-  console.log(`  ${ok ? "✓" : "✗"} ${preset} (${hfLines.length} lines)`);
+  console.log(`  ${ok ? "✓" : "✗"} ${engine} ${preset} (${hfLines.length} lines)`);
   for (const l of overflows) {
     console.log(
       `    OVERFLOW +${(l.natW - l.containerW).toFixed(1)}px: "${l.text}"`,
@@ -114,7 +183,7 @@ function reportPreset(engine: string, preset: string, lines: LineResult[]) {
 
 async function testPlaywright(
   engine: string,
-  launchFn: () => ReturnType<typeof chromium.launch>,
+  launchFn: () => Promise<Browser>,
 ) {
   const browser = await launchFn();
   const page: Page = await browser.newPage({
@@ -123,8 +192,14 @@ async function testPlaywright(
 
   console.log(`\n── ${engine} ──`);
 
-  await page.goto("http://localhost:5173", { waitUntil: "networkidle" });
-  await page.waitForTimeout(3000);
+  await page.goto(BASE_URL, { waitUntil: "networkidle" });
+  await page
+    .getByText("Loading font & engine...")
+    .waitFor({ state: "hidden", timeout: 15_000 })
+    .catch(() => {});
+  await page.waitForSelector('button:has-text("Classic Knuth")', {
+    timeout: 15_000,
+  });
 
   for (const preset of PRESETS) {
     await page.click(`button:has-text("${preset}")`);
@@ -173,9 +248,48 @@ async function testPlaywright(
   await browser.close();
 }
 
+function isBrowserInstallError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Executable doesn't exist|Please run.*playwright install|browserType\.launch/u.test(
+    message,
+  );
+}
+
+async function testPlaywrightIfAvailable(
+  engine: string,
+  launchFn: () => Promise<Browser>,
+): Promise<void> {
+  try {
+    await testPlaywright(engine, launchFn);
+  } catch (error) {
+    if (!isBrowserInstallError(error)) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
+    console.log(`\n── ${engine} ──`);
+    console.log(`  skipped: ${message}`);
+  }
+}
+
 // ── Safari via safaridriver ──
 
 async function testSafari() {
+  if (process.env.KP_TEST_SAFARI === "0") {
+    console.log("\n── Safari native ──");
+    console.log("  skipped: KP_TEST_SAFARI=0");
+    return;
+  }
+  if (process.platform !== "darwin") {
+    console.log("\n── Safari native ──");
+    console.log("  skipped: native Safari is only available on macOS");
+    return;
+  }
+  if (spawnSync("which", ["safaridriver"]).status !== 0) {
+    console.log("\n── Safari native ──");
+    console.log("  skipped: safaridriver not found");
+    return;
+  }
+
   let driver: ChildProcess | null = null;
   try {
     driver = spawn("safaridriver", ["-p", "9540"], { stdio: "pipe" });
@@ -212,7 +326,7 @@ async function testSafari() {
     console.log("\n── Safari 26.4 ──");
 
     await wd("POST", `/session/${sid}/url`, {
-      url: "http://localhost:5173",
+      url: BASE_URL,
     });
     await new Promise((r) => setTimeout(r, 5000));
 
@@ -246,8 +360,14 @@ async function testSafari() {
 
 // ── Run ──
 
-await testPlaywright("Chromium", () => chromium.launch());
-await testPlaywright("WebKit (Playwright)", () => webkit.launch());
-await testSafari();
+let devServer: ChildProcess | null = null;
+try {
+  devServer = await startDevServer();
+  await testPlaywright("Chromium", () => chromium.launch());
+  await testPlaywrightIfAvailable("WebKit (Playwright)", () => webkit.launch());
+  await testSafari();
+} finally {
+  await stopDevServer(devServer);
+}
 
 console.log("\nDone.");

@@ -1,8 +1,9 @@
-use wasm_bindgen::prelude::*;
-use serde::Serialize;
 use harfrust::{Feature, FontRef, ShaperData, ShaperInstance, Tag, UnicodeBuffer};
+use icu_segmenter::LineSegmenter;
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub fn wasm_build_id() -> String {
@@ -33,6 +34,43 @@ const T_PEN: u8 = 2;
 
 thread_local! {
     static TRIE_CACHE: RefCell<HashMap<String, Vec<u8>>> = RefCell::new(HashMap::new());
+}
+
+struct RegisteredFont {
+    data: Vec<u8>,
+    shape_cache: HashMap<String, f64>,
+}
+
+thread_local! {
+    static FONT_REGISTRY: RefCell<HashMap<u32, RegisteredFont>> = RefCell::new(HashMap::new());
+    static NEXT_FONT_HANDLE: RefCell<u32> = const { RefCell::new(1) };
+}
+
+#[wasm_bindgen]
+pub fn register_layout_font(font_data: &[u8]) -> u32 {
+    let handle = NEXT_FONT_HANDLE.with(|next| {
+        let mut next = next.borrow_mut();
+        let handle = *next;
+        *next = next.saturating_add(1).max(1);
+        handle
+    });
+
+    FONT_REGISTRY.with(|registry| {
+        registry.borrow_mut().insert(
+            handle,
+            RegisteredFont {
+                data: font_data.to_vec(),
+                shape_cache: HashMap::new(),
+            },
+        );
+    });
+
+    handle
+}
+
+#[wasm_bindgen]
+pub fn unregister_layout_font(handle: u32) -> bool {
+    FONT_REGISTRY.with(|registry| registry.borrow_mut().remove(&handle).is_some())
 }
 
 /// Load hyphenation trie data for a language. Must be called before
@@ -160,10 +198,26 @@ pub fn kp_break_pass(
             fit: u8,
         }
         let mut best4 = [
-            Best { node_idx: -1, dem: 0.0, fit: 0 },
-            Best { node_idx: -1, dem: 0.0, fit: 1 },
-            Best { node_idx: -1, dem: 0.0, fit: 2 },
-            Best { node_idx: -1, dem: 0.0, fit: 3 },
+            Best {
+                node_idx: -1,
+                dem: 0.0,
+                fit: 0,
+            },
+            Best {
+                node_idx: -1,
+                dem: 0.0,
+                fit: 1,
+            },
+            Best {
+                node_idx: -1,
+                dem: 0.0,
+                fit: 2,
+            },
+            Best {
+                node_idx: -1,
+                dem: 0.0,
+                fit: 3,
+            },
         ];
 
         let mut dead: Vec<usize> = Vec::new();
@@ -254,8 +308,7 @@ pub fn kp_break_pass(
             let ni = active[di] as i32;
             // Prefer the node with the most recent break position so that
             // emergency breaks produce the shortest possible overfull line.
-            if last_deactivated < 0
-                || nodes[ni as usize].pos > nodes[last_deactivated as usize].pos
+            if last_deactivated < 0 || nodes[ni as usize].pos > nodes[last_deactivated as usize].pos
             {
                 last_deactivated = ni;
             }
@@ -346,6 +399,8 @@ pub fn kp_break_pass(
 
 #[derive(Serialize)]
 struct LineOut {
+    text: String,
+    segments: Vec<String>,
     words: Vec<String>,
     widths: Vec<f64>,
     #[serde(rename = "boxW")]
@@ -368,14 +423,15 @@ struct Item {
     v: String,
 }
 
-fn shape_word_advance(font_data: &[u8], shaper_data: &ShaperData, instance: Option<&ShaperInstance>, text: &str, font_size_px: f64, features: &[Feature]) -> f64 {
-    let font_ref = match FontRef::new(font_data) {
-        Ok(f) => f,
-        Err(_) => return 0.0,
-    };
-    let shaper = shaper_data.shaper(&font_ref)
-        .instance(instance)
-        .build();
+fn shape_word_advance_uncached(
+    font_ref: &FontRef,
+    shaper_data: &ShaperData,
+    instance: Option<&ShaperInstance>,
+    text: &str,
+    font_size_px: f64,
+    features: &[Feature],
+) -> f64 {
+    let shaper = shaper_data.shaper(&font_ref).instance(instance).build();
     let upem = shaper.units_per_em() as f64;
     if upem == 0.0 {
         return 0.0;
@@ -388,6 +444,278 @@ fn shape_word_advance(font_data: &[u8], shaper_data: &ShaperData, instance: Opti
     advance as f64 * font_size_px / upem
 }
 
+fn shape_cache_key(
+    text: &str,
+    font_size_px: f64,
+    liga: bool,
+    font_weight: f64,
+    opsz: f64,
+    ital: f64,
+    wdth: f64,
+    lang: &str,
+    dir: &str,
+) -> String {
+    format!(
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        text, font_size_px, liga as u8, font_weight, opsz, ital, wdth, lang, dir
+    )
+}
+
+fn shape_word_advance(
+    font_ref: &FontRef,
+    shaper_data: &ShaperData,
+    instance: Option<&ShaperInstance>,
+    shape_cache: &mut HashMap<String, f64>,
+    text: &str,
+    font_size_px: f64,
+    features: &[Feature],
+    liga: bool,
+    font_weight: f64,
+    opsz: f64,
+    ital: f64,
+    wdth: f64,
+    lang: &str,
+    dir: &str,
+) -> f64 {
+    let key = shape_cache_key(
+        text,
+        font_size_px,
+        liga,
+        font_weight,
+        opsz,
+        ital,
+        wdth,
+        lang,
+        dir,
+    );
+    if let Some(width) = shape_cache.get(&key) {
+        return *width;
+    }
+    let width = shape_word_advance_uncached(
+        font_ref,
+        shaper_data,
+        instance,
+        text,
+        font_size_px,
+        features,
+    );
+    shape_cache.insert(key, width);
+    width
+}
+
+fn is_breakable_space(c: char) -> bool {
+    c.is_whitespace() && c != '\u{00A0}' && c != '\u{202F}' && c != '\u{2060}'
+}
+
+fn split_trailing_breakable_space(s: &str) -> (&str, &str) {
+    let mut split = s.len();
+    for (idx, ch) in s.char_indices().rev() {
+        if is_breakable_space(ch) {
+            split = idx;
+        } else {
+            break;
+        }
+    }
+    s.split_at(split)
+}
+
+fn is_hyphenation_candidate(s: &str) -> bool {
+    s.chars().count() > 5 && s.chars().all(char::is_alphabetic)
+}
+
+fn line_break_units(text: &str) -> Vec<&str> {
+    let segmenter = LineSegmenter::new_auto(Default::default());
+    let mut units = Vec::new();
+    let mut prev = 0;
+
+    for boundary in segmenter.segment_str(text).skip(1) {
+        if boundary > prev {
+            units.push(&text[prev..boundary]);
+        }
+        prev = boundary;
+    }
+
+    if prev < text.len() {
+        units.push(&text[prev..]);
+    }
+
+    units
+}
+
+struct ShapeEnv<'a> {
+    font_ref: &'a FontRef<'a>,
+    shaper_data: &'a ShaperData,
+    shape_cache: &'a mut HashMap<String, f64>,
+    font_size_px: f64,
+    features: &'a [Feature],
+    liga: bool,
+    font_weight: f64,
+    opsz: f64,
+    ital: f64,
+    lang: &'a str,
+    dir: &'a str,
+}
+
+impl ShapeEnv<'_> {
+    fn shape(&mut self, instance: Option<&ShaperInstance>, text: &str, wdth: f64) -> f64 {
+        shape_word_advance(
+            self.font_ref,
+            self.shaper_data,
+            instance,
+            self.shape_cache,
+            text,
+            self.font_size_px,
+            self.features,
+            self.liga,
+            self.font_weight,
+            self.opsz,
+            self.ital,
+            wdth,
+            self.lang,
+            self.dir,
+        )
+    }
+}
+
+fn push_widow_penalty(items: &mut Vec<Item>) {
+    items.push(Item {
+        t: T_PEN,
+        w: 0.0,
+        y: 0.0,
+        z: 0.0,
+        p: WIDOW_PENALTY,
+        f: 0,
+        hy: 0.0,
+        hz: 0.0,
+        v: String::new(),
+    });
+}
+
+fn push_box(
+    items: &mut Vec<Item>,
+    env: &mut ShapeEnv,
+    default_instance: Option<&ShaperInstance>,
+    hz_min_instance: Option<&ShaperInstance>,
+    hz_max_instance: Option<&ShaperInstance>,
+    text: &str,
+    width: f64,
+    hz_enabled: bool,
+    hz_min: f64,
+    hz_max: f64,
+) {
+    let (hy_val, hz_val) = if hz_enabled {
+        let w_min = env.shape(hz_min_instance, text, hz_min);
+        let w_max = env.shape(hz_max_instance, text, hz_max);
+        ((w_max - width).max(0.0), (width - w_min).max(0.0))
+    } else {
+        (0.0, 0.0)
+    };
+
+    let _ = default_instance;
+    items.push(Item {
+        t: T_BOX,
+        w: width,
+        y: 0.0,
+        z: 0.0,
+        p: 0.0,
+        f: 0,
+        hy: hy_val,
+        hz: hz_val,
+        v: text.to_string(),
+    });
+}
+
+fn push_text_boxes(
+    items: &mut Vec<Item>,
+    env: &mut ShapeEnv,
+    default_instance: Option<&ShaperInstance>,
+    hz_min_instance: Option<&ShaperInstance>,
+    hz_max_instance: Option<&ShaperInstance>,
+    text: &str,
+    hz_enabled: bool,
+    hz_min: f64,
+    hz_max: f64,
+    hyphenate: bool,
+    lang: &str,
+) {
+    if !hyphenate || !is_hyphenation_candidate(text) {
+        let width = env.shape(default_instance, text, 100.0);
+        push_box(
+            items,
+            env,
+            default_instance,
+            hz_min_instance,
+            hz_max_instance,
+            text,
+            width,
+            hz_enabled,
+            hz_min,
+            hz_max,
+        );
+        return;
+    }
+
+    let syllables: Vec<&str> = hyphenate_word(text, lang);
+    if syllables.len() <= 1 {
+        let width = env.shape(default_instance, text, 100.0);
+        push_box(
+            items,
+            env,
+            default_instance,
+            hz_min_instance,
+            hz_max_instance,
+            text,
+            width,
+            hz_enabled,
+            hz_min,
+            hz_max,
+        );
+        return;
+    }
+
+    let full_width = env.shape(default_instance, text, 100.0);
+    let mut prev_prefix_width = 0.0;
+    let mut prefix = String::new();
+
+    for (i, syllable) in syllables.iter().enumerate() {
+        prefix.push_str(syllable);
+        let prefix_width = if i == syllables.len() - 1 {
+            full_width
+        } else {
+            env.shape(default_instance, &prefix, 100.0)
+        };
+        let width = (prefix_width - prev_prefix_width).max(0.0);
+        push_box(
+            items,
+            env,
+            default_instance,
+            hz_min_instance,
+            hz_max_instance,
+            syllable,
+            width,
+            hz_enabled,
+            hz_min,
+            hz_max,
+        );
+
+        if i < syllables.len() - 1 {
+            let prefix_hyphen_width = env.shape(default_instance, &format!("{prefix}-"), 100.0);
+            items.push(Item {
+                t: T_PEN,
+                w: prefix_hyphen_width - prefix_width,
+                y: 0.0,
+                z: 0.0,
+                p: HYPHEN_PENALTY,
+                f: 1,
+                hy: 0.0,
+                hz: 0.0,
+                v: String::new(),
+            });
+        }
+        prev_prefix_width = prefix_width;
+    }
+}
+
 /// `opsz` controls the optical-sizing variation axis.
 /// - `> 0.0` → set `opsz` to that value (matches CSS `font-variation-settings: 'opsz' N`)
 /// - `0.0`   → don't set `opsz` at all (matches CSS `font-optical-sizing: none`)
@@ -397,8 +725,8 @@ fn shape_word_advance(font_data: &[u8], shaper_data: &ShaperData, instance: Opti
 ///   `slnt` to `-ital` (for fonts with a continuous slant axis)
 /// - `0.0`   → upright (default)
 fn build_items(
-    words: &[&str],
-    font_data: &[u8],
+    text: &str,
+    shape_cache: &mut HashMap<String, f64>,
     shaper_data: &ShaperData,
     font_ref: &FontRef,
     font_size_px: f64,
@@ -409,6 +737,7 @@ fn build_items(
     hz_max: f64,
     hyphenate: bool,
     lang: &str,
+    dir: &str,
     liga: bool,
 ) -> (Vec<Item>, f64) {
     let hz_enabled = hz_min > 0.0 && hz_max > 0.0;
@@ -439,12 +768,21 @@ fn build_items(
         None
     };
 
-    let sp_w = shape_word_advance(font_data, shaper_data, default_instance.as_ref(), " ", font_size_px, &features);
-    let hyphen_w = if hyphenate {
-        shape_word_advance(font_data, shaper_data, default_instance.as_ref(), "-", font_size_px, &features)
-    } else {
-        0.0
+    let mut env = ShapeEnv {
+        font_ref,
+        shaper_data,
+        shape_cache,
+        font_size_px,
+        features: &features,
+        liga,
+        font_weight,
+        opsz,
+        ital,
+        lang,
+        dir,
     };
+
+    let sp_w = env.shape(default_instance.as_ref(), " ", 100.0);
 
     let hz_min_instance = if hz_enabled {
         let mut vars = vec![(wdth_tag, hz_min as f32)];
@@ -461,84 +799,49 @@ fn build_items(
         None
     };
 
-    let syllables_for_word: Vec<Vec<String>> = if hyphenate {
-        words
-            .iter()
-            .map(|w| {
-                let syls: Vec<&str> = hyphenate_word(w, lang);
-                if syls.len() <= 1 {
-                    vec![w.to_string()]
-                } else {
-                    syls.into_iter().map(|s| s.to_string()).collect()
-                }
-            })
-            .collect()
-    } else {
-        words.iter().map(|w| vec![w.to_string()]).collect()
-    };
-
     let mut items: Vec<Item> = Vec::new();
 
-    for (i, syllables) in syllables_for_word.iter().enumerate() {
-        for (si, syl) in syllables.iter().enumerate() {
-            let w_norm = shape_word_advance(font_data, shaper_data, default_instance.as_ref(), syl, font_size_px, &features);
-            let (hy_val, hz_val) = if hz_enabled {
-                let w_min = shape_word_advance(font_data, shaper_data, hz_min_instance.as_ref(), syl, font_size_px, &features);
-                let w_max = shape_word_advance(font_data, shaper_data, hz_max_instance.as_ref(), syl, font_size_px, &features);
-                (
-                    (w_max - w_norm).max(0.0),
-                    (w_norm - w_min).max(0.0),
-                )
-            } else {
-                (0.0, 0.0)
-            };
-
-            items.push(Item {
-                t: T_BOX,
-                w: w_norm,
-                y: 0.0,
-                z: 0.0,
-                p: 0.0,
-                f: 0,
-                hy: hy_val,
-                hz: hz_val,
-                v: syl.clone(),
-            });
-
-            if si < syllables.len() - 1 {
-                items.push(Item {
-                    t: T_PEN,
-                    w: hyphen_w,
-                    y: 0.0,
-                    z: 0.0,
-                    p: HYPHEN_PENALTY,
-                    f: 1,
-                    hy: 0.0,
-                    hz: 0.0,
-                    v: String::new(),
-                });
-            }
+    let units = line_break_units(text);
+    for (i, unit) in units.iter().enumerate() {
+        let (content, trailing_space) = split_trailing_breakable_space(unit);
+        if !content.is_empty() {
+            push_text_boxes(
+                &mut items,
+                &mut env,
+                default_instance.as_ref(),
+                hz_min_instance.as_ref(),
+                hz_max_instance.as_ref(),
+                content,
+                hz_enabled,
+                hz_min,
+                hz_max,
+                hyphenate,
+                lang,
+            );
         }
 
-        if i < words.len() - 1 {
-            if i == words.len() - 2 {
-                items.push(Item {
-                    t: T_PEN,
-                    w: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                    p: WIDOW_PENALTY,
-                    f: 0,
-                    hy: 0.0,
-                    hz: 0.0,
-                    v: String::new(),
-                });
+        let has_more = i < units.len() - 1;
+        if !trailing_space.is_empty() && has_more {
+            if i == units.len() - 2 {
+                push_widow_penalty(&mut items);
             }
             items.push(Item {
                 t: T_GLUE,
                 w: sp_w,
                 y: sp_w * 0.5,
                 z: sp_w * SPACE_SHRINK_RATIO,
+                p: 0.0,
+                f: 0,
+                hy: 0.0,
+                hz: 0.0,
+                v: " ".to_string(),
+            });
+        } else if has_more && !content.is_empty() {
+            items.push(Item {
+                t: T_GLUE,
+                w: 0.0,
+                y: (font_size_px * 0.25).max(1.0),
+                z: 0.0,
                 p: 0.0,
                 f: 0,
                 hy: 0.0,
@@ -592,7 +895,12 @@ fn kp_break_internal(
 
     for i in 0..n {
         let it = &items[i];
-        c_w[i + 1] = c_w[i] + if it.t == T_BOX || it.t == T_GLUE { it.w } else { 0.0 };
+        c_w[i + 1] = c_w[i]
+            + if it.t == T_BOX || it.t == T_GLUE {
+                it.w
+            } else {
+                0.0
+            };
         c_y[i + 1] = c_y[i] + if it.t == T_GLUE { it.y } else { 0.0 };
         c_z[i + 1] = c_z[i] + if it.t == T_GLUE { it.z } else { 0.0 };
         c_hy[i + 1] = c_hy[i] + if it.t == T_BOX { it.hy } else { 0.0 };
@@ -638,10 +946,26 @@ fn kp_break_internal(
             fit: u8,
         }
         let mut best4 = [
-            Best { node_idx: -1, dem: 0.0, fit: 0 },
-            Best { node_idx: -1, dem: 0.0, fit: 1 },
-            Best { node_idx: -1, dem: 0.0, fit: 2 },
-            Best { node_idx: -1, dem: 0.0, fit: 3 },
+            Best {
+                node_idx: -1,
+                dem: 0.0,
+                fit: 0,
+            },
+            Best {
+                node_idx: -1,
+                dem: 0.0,
+                fit: 1,
+            },
+            Best {
+                node_idx: -1,
+                dem: 0.0,
+                fit: 2,
+            },
+            Best {
+                node_idx: -1,
+                dem: 0.0,
+                fit: 3,
+            },
         ];
 
         let mut dead: Vec<usize> = Vec::new();
@@ -732,8 +1056,7 @@ fn kp_break_internal(
             let ni = active[di] as i32;
             // Prefer the node with the most recent break position so that
             // emergency breaks produce the shortest possible overfull line.
-            if last_deactivated < 0
-                || nodes[ni as usize].pos > nodes[last_deactivated as usize].pos
+            if last_deactivated < 0 || nodes[ni as usize].pos > nodes[last_deactivated as usize].pos
             {
                 last_deactivated = ni;
             }
@@ -825,9 +1148,12 @@ fn build_lines_from_items(
     let hz_enabled = hz_min > 0.0 && hz_max > 0.0;
 
     struct RawLine {
+        text: String,
+        segments: Vec<String>,
         words: Vec<String>,
         widths: Vec<f64>,
         box_w: f64,
+        visible_gaps: usize,
     }
 
     let mut raw_lines: Vec<RawLine> = Vec::new();
@@ -850,43 +1176,50 @@ fn build_lines_from_items(
     });
 
     for seg in &segments {
-        let is_flagged_break = seg.end < items.len()
-            && items[seg.end].t == T_PEN
-            && items[seg.end].f != 0;
+        let is_flagged_break =
+            seg.end < items.len() && items[seg.end].t == T_PEN && items[seg.end].f != 0;
 
-        let mut words: Vec<String> = Vec::new();
+        let mut text = String::new();
+        let mut line_segments: Vec<String> = Vec::new();
         let mut widths: Vec<f64> = Vec::new();
         let mut box_w = 0.0;
-        let mut current_word = String::new();
-        let mut current_width = 0.0;
+        let mut visible_gaps = 0usize;
 
         for j in seg.start..=seg.end {
             let it = &items[j];
             if it.t == T_BOX {
-                current_word.push_str(&it.v);
-                current_width += it.w;
-            } else if it.t == T_GLUE {
-                if !current_word.is_empty() {
-                    words.push(current_word.clone());
-                    widths.push(current_width);
-                    box_w += current_width;
-                    current_word.clear();
-                    current_width = 0.0;
+                text.push_str(&it.v);
+                line_segments.push(it.v.clone());
+                widths.push(it.w);
+                box_w += it.w;
+            } else if it.t == T_GLUE && j < seg.end && !it.v.is_empty() {
+                if !text.is_empty() {
+                    text.push_str(&it.v);
+                    visible_gaps += 1;
                 }
             }
         }
-        if !current_word.is_empty() {
-            if is_flagged_break {
-                current_word.push('-');
-                current_width += items[seg.end].w;
+        if is_flagged_break && !text.is_empty() {
+            text.push('-');
+            if let Some(last) = line_segments.last_mut() {
+                last.push('-');
             }
-            words.push(current_word);
-            widths.push(current_width);
-            box_w += current_width;
+            if let Some(last_width) = widths.last_mut() {
+                *last_width += items[seg.end].w;
+            }
+            box_w += items[seg.end].w;
         }
 
-        if !words.is_empty() {
-            raw_lines.push(RawLine { words, widths, box_w });
+        if !text.is_empty() {
+            let words = text.split_whitespace().map(str::to_string).collect();
+            raw_lines.push(RawLine {
+                text,
+                segments: line_segments,
+                words,
+                widths,
+                box_w,
+                visible_gaps,
+            });
         }
     }
 
@@ -896,7 +1229,7 @@ fn build_lines_from_items(
         .enumerate()
         .map(|(i, rl)| {
             let is_last = i == total - 1;
-            let wdth = if !hz_enabled || is_last || rl.words.len() <= 1 {
+            let wdth = if !hz_enabled || is_last || rl.segments.len() <= 1 {
                 100.0
             } else {
                 let seg = &segments[i];
@@ -916,8 +1249,7 @@ fn build_lines_from_items(
                     }
                 }
 
-                let gaps = rl.words.len() as f64 - 1.0;
-                let natural = rl.box_w + space_width * gaps;
+                let natural = rl.box_w + space_width * rl.visible_gaps as f64;
                 let slack = line_width - natural;
 
                 if slack.abs() < 0.5 || (hz_y == 0.0 && hz_z == 0.0) {
@@ -925,10 +1257,18 @@ fn build_lines_from_items(
                 } else {
                     let hz_fraction = if slack > 0.0 {
                         let total_y = glue_y + hz_y;
-                        if total_y > 0.0 { hz_y / total_y } else { 0.0 }
+                        if total_y > 0.0 {
+                            hz_y / total_y
+                        } else {
+                            0.0
+                        }
                     } else {
                         let total_z = glue_z + hz_z;
-                        if total_z > 0.0 { hz_z / total_z } else { 0.0 }
+                        if total_z > 0.0 {
+                            hz_z / total_z
+                        } else {
+                            0.0
+                        }
                     };
 
                     let hz_px = slack * hz_fraction;
@@ -949,6 +1289,8 @@ fn build_lines_from_items(
             };
 
             LineOut {
+                text: rl.text,
+                segments: rl.segments,
                 words: rl.words,
                 widths: rl.widths,
                 box_w: rl.box_w,
@@ -971,6 +1313,8 @@ pub fn layout_paragraph(
     sim_dem: f64,
     hyphenate: bool,
     lang: &str,
+    dir: &str,
+    writing_mode: &str,
     hz_min: f64,
     hz_max: f64,
     liga: bool,
@@ -978,20 +1322,103 @@ pub fn layout_paragraph(
     opsz: f64,
     ital: f64,
 ) -> JsValue {
+    let mut shape_cache = HashMap::new();
+    layout_paragraph_impl(
+        font_data,
+        &mut shape_cache,
+        font_size_px,
+        text,
+        line_width,
+        sim_dem,
+        hyphenate,
+        lang,
+        dir,
+        writing_mode,
+        hz_min,
+        hz_max,
+        liga,
+        font_weight,
+        opsz,
+        ital,
+    )
+}
+
+#[wasm_bindgen]
+pub fn layout_paragraph_for_font(
+    font_handle: u32,
+    font_size_px: f64,
+    text: &str,
+    line_width: f64,
+    sim_dem: f64,
+    hyphenate: bool,
+    lang: &str,
+    dir: &str,
+    writing_mode: &str,
+    hz_min: f64,
+    hz_max: f64,
+    liga: bool,
+    font_weight: f64,
+    opsz: f64,
+    ital: f64,
+) -> JsValue {
+    FONT_REGISTRY.with(|registry| {
+        let mut registry = registry.borrow_mut();
+        let Some(entry) = registry.get_mut(&font_handle) else {
+            return serde_wasm_bindgen::to_value(&Vec::<LineOut>::new()).unwrap();
+        };
+        layout_paragraph_impl(
+            &entry.data,
+            &mut entry.shape_cache,
+            font_size_px,
+            text,
+            line_width,
+            sim_dem,
+            hyphenate,
+            lang,
+            dir,
+            writing_mode,
+            hz_min,
+            hz_max,
+            liga,
+            font_weight,
+            opsz,
+            ital,
+        )
+    })
+}
+
+fn layout_paragraph_impl(
+    font_data: &[u8],
+    shape_cache: &mut HashMap<String, f64>,
+    font_size_px: f64,
+    text: &str,
+    line_width: f64,
+    sim_dem: f64,
+    hyphenate: bool,
+    lang: &str,
+    dir: &str,
+    writing_mode: &str,
+    hz_min: f64,
+    hz_max: f64,
+    liga: bool,
+    font_weight: f64,
+    opsz: f64,
+    ital: f64,
+) -> JsValue {
+    let _ = writing_mode;
     let font_ref = match FontRef::new(font_data) {
         Ok(f) => f,
         Err(_) => return serde_wasm_bindgen::to_value(&Vec::<LineOut>::new()).unwrap(),
     };
     let shaper_data = ShaperData::new(&font_ref);
 
-    let words: Vec<&str> = text.split_whitespace().collect();
-    if words.is_empty() {
+    if text.trim().is_empty() {
         return serde_wasm_bindgen::to_value(&Vec::<LineOut>::new()).unwrap();
     }
 
     let (items, sp_w) = build_items(
-        &words,
-        font_data,
+        text,
+        shape_cache,
         &shaper_data,
         &font_ref,
         font_size_px,
@@ -1002,6 +1429,7 @@ pub fn layout_paragraph(
         hz_max,
         hyphenate,
         lang,
+        dir,
         liga,
     );
 
@@ -1038,7 +1466,7 @@ pub fn layout_paragraph(
         }
 
         for line in &mut lines {
-            if line.last || (line.wdth - 100.0).abs() < 0.1 || line.words.len() <= 1 {
+            if line.last || (line.wdth - 100.0).abs() < 0.1 || line.segments.len() <= 1 {
                 continue;
             }
 
@@ -1047,17 +1475,41 @@ pub fn layout_paragraph(
             let instance = ShaperInstance::from_variations(&font_ref, vars);
 
             let mut measured_box_w = 0.0;
-            for word in &line.words {
+            for segment in &line.segments {
                 measured_box_w += shape_word_advance(
-                    font_data, &shaper_data, Some(&instance), word,
-                    font_size_px, &features,
+                    &font_ref,
+                    &shaper_data,
+                    Some(&instance),
+                    shape_cache,
+                    segment,
+                    font_size_px,
+                    &features,
+                    liga,
+                    font_weight,
+                    opsz,
+                    ital,
+                    line.wdth,
+                    lang,
+                    dir,
                 );
             }
             let measured_sp_w = shape_word_advance(
-                font_data, &shaper_data, Some(&instance), " ",
-                font_size_px, &features,
+                &font_ref,
+                &shaper_data,
+                Some(&instance),
+                shape_cache,
+                " ",
+                font_size_px,
+                &features,
+                liga,
+                font_weight,
+                opsz,
+                ital,
+                line.wdth,
+                lang,
+                dir,
             );
-            let gaps = line.words.len() as f64 - 1.0;
+            let gaps = line.text.matches(' ').count() as f64;
             let measured_natural = measured_box_w + measured_sp_w * gaps;
 
             if measured_natural <= line_width {
@@ -1075,15 +1527,39 @@ pub fn layout_paragraph(
                 let mid_inst = ShaperInstance::from_variations(&font_ref, mid_vars);
 
                 let mut mid_w = 0.0;
-                for word in &line.words {
+                for segment in &line.segments {
                     mid_w += shape_word_advance(
-                        font_data, &shaper_data, Some(&mid_inst), word,
-                        font_size_px, &features,
+                        &font_ref,
+                        &shaper_data,
+                        Some(&mid_inst),
+                        shape_cache,
+                        segment,
+                        font_size_px,
+                        &features,
+                        liga,
+                        font_weight,
+                        opsz,
+                        ital,
+                        mid,
+                        lang,
+                        dir,
                     );
                 }
                 let mid_sp = shape_word_advance(
-                    font_data, &shaper_data, Some(&mid_inst), " ",
-                    font_size_px, &features,
+                    &font_ref,
+                    &shaper_data,
+                    Some(&mid_inst),
+                    shape_cache,
+                    " ",
+                    font_size_px,
+                    &features,
+                    liga,
+                    font_weight,
+                    opsz,
+                    ital,
+                    mid,
+                    lang,
+                    dir,
                 );
                 let mid_nat = mid_w + mid_sp * gaps;
 
@@ -1145,7 +1621,23 @@ pub fn measure_word_width(
         Some(ShaperInstance::from_variations(&font_ref, vars))
     };
 
-    shape_word_advance(font_data, &shaper_data, instance.as_ref(), text, font_size_px, &features)
+    let mut shape_cache = HashMap::new();
+    shape_word_advance(
+        &font_ref,
+        &shaper_data,
+        instance.as_ref(),
+        &mut shape_cache,
+        text,
+        font_size_px,
+        &features,
+        liga,
+        font_weight,
+        opsz,
+        ital,
+        wdth,
+        "und",
+        "auto",
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1194,7 +1686,8 @@ mod tests {
         let liga_tag = Tag::new(b"liga");
         let features = [Feature::new(liga_tag, 1, ..)];
 
-        let w = shape_word_advance(TEST_FONT, &shaper_data, None, "Hello", 16.0, &features);
+        let w =
+            shape_word_advance_uncached(&font_ref, &shaper_data, None, "Hello", 16.0, &features);
         assert!(w > 0.0, "Expected positive width, got {w}");
     }
 
@@ -1205,7 +1698,7 @@ mod tests {
         let liga_tag = Tag::new(b"liga");
         let features = [Feature::new(liga_tag, 1, ..)];
 
-        let w = shape_word_advance(TEST_FONT, &shaper_data, None, "", 16.0, &features);
+        let w = shape_word_advance_uncached(&font_ref, &shaper_data, None, "", 16.0, &features);
         assert_eq!(w, 0.0);
     }
 
@@ -1216,10 +1709,15 @@ mod tests {
         let liga_tag = Tag::new(b"liga");
         let features = [Feature::new(liga_tag, 1, ..)];
 
-        let w16 = shape_word_advance(TEST_FONT, &shaper_data, None, "test", 16.0, &features);
-        let w32 = shape_word_advance(TEST_FONT, &shaper_data, None, "test", 32.0, &features);
+        let w16 =
+            shape_word_advance_uncached(&font_ref, &shaper_data, None, "test", 16.0, &features);
+        let w32 =
+            shape_word_advance_uncached(&font_ref, &shaper_data, None, "test", 32.0, &features);
         let ratio = w32 / w16;
-        assert!((ratio - 2.0).abs() < 0.01, "Expected 2x scaling, got {ratio}x");
+        assert!(
+            (ratio - 2.0).abs() < 0.01,
+            "Expected 2x scaling, got {ratio}x"
+        );
     }
 
     #[test]
@@ -1229,7 +1727,13 @@ mod tests {
         let liga_tag = Tag::new(b"liga");
         let features = [Feature::new(liga_tag, 1, ..)];
 
-        let w = shape_word_advance(b"not a font", &shaper_data, None, "Hello", 16.0, &features);
+        let bad_font = FontRef::new(b"not a font");
+        let w = bad_font
+            .ok()
+            .map(|bad_ref| {
+                shape_word_advance_uncached(&bad_ref, &shaper_data, None, "Hello", 16.0, &features)
+            })
+            .unwrap_or(0.0);
         assert_eq!(w, 0.0);
     }
 
@@ -1240,8 +1744,12 @@ mod tests {
         static DE_TRIE: &[u8] = include_bytes!("../tests/fixtures/de.bin");
         TRIE_CACHE.with(|c| {
             let mut cache = c.borrow_mut();
-            cache.entry("en".to_string()).or_insert_with(|| EN_TRIE.to_vec());
-            cache.entry("de".to_string()).or_insert_with(|| DE_TRIE.to_vec());
+            cache
+                .entry("en".to_string())
+                .or_insert_with(|| EN_TRIE.to_vec());
+            cache
+                .entry("de".to_string())
+                .or_insert_with(|| DE_TRIE.to_vec());
         });
     }
 
@@ -1249,9 +1757,11 @@ mod tests {
         load_test_tries();
         let font_ref = FontRef::new(TEST_FONT).unwrap();
         let shaper_data = ShaperData::new(&font_ref);
+        let text = words.join(" ");
+        let mut shape_cache = HashMap::new();
         build_items(
-            words,
-            TEST_FONT,
+            &text,
+            &mut shape_cache,
             &shaper_data,
             &font_ref,
             16.0,
@@ -1262,6 +1772,7 @@ mod tests {
             0.0,
             hyphenate,
             "en",
+            "auto",
             true,
         )
     }
@@ -1276,7 +1787,7 @@ mod tests {
         assert_eq!(items[0].v, "Hello");
         assert!(items[0].w > 0.0);
         assert_eq!(items[1].t, T_GLUE); // final fill glue
-        assert_eq!(items[2].t, T_PEN);  // forced break
+        assert_eq!(items[2].t, T_PEN); // forced break
         assert_eq!(items[2].p, -INF);
     }
 
@@ -1324,10 +1835,19 @@ mod tests {
     #[test]
     fn build_items_with_hyphenation() {
         let (items, _) = make_items(&["hyphenation"], true);
-        let pen_count = items.iter().filter(|it| it.t == T_PEN && it.p == HYPHEN_PENALTY).count();
-        assert!(pen_count > 0, "Hyphenation should insert penalty items between syllables");
+        let pen_count = items
+            .iter()
+            .filter(|it| it.t == T_PEN && it.p == HYPHEN_PENALTY)
+            .count();
+        assert!(
+            pen_count > 0,
+            "Hyphenation should insert penalty items between syllables"
+        );
         let box_count = items.iter().filter(|it| it.t == T_BOX).count();
-        assert!(box_count > 1, "Hyphenated word should produce multiple box items, got {box_count}");
+        assert!(
+            box_count > 1,
+            "Hyphenated word should produce multiple box items, got {box_count}"
+        );
     }
 
     #[test]
@@ -1337,9 +1857,10 @@ mod tests {
         let shaper_data = ShaperData::new(&font_ref);
         // DM Mono is not a variable-width font, so hz values will be 0.
         // This tests the code path; real Hz fonts would produce non-zero values.
+        let mut shape_cache = HashMap::new();
         let (items, _) = build_items(
-            &["Hello", "world"],
-            TEST_FONT,
+            "Hello world",
+            &mut shape_cache,
             &shaper_data,
             &font_ref,
             16.0,
@@ -1350,6 +1871,7 @@ mod tests {
             110.0,
             false,
             "en",
+            "auto",
             true,
         );
         // Items should still be well-formed even if hz values are 0 for this font
@@ -1357,15 +1879,24 @@ mod tests {
         assert_eq!(items[0].t, T_BOX);
     }
 
-    // ── kp_break_internal ────────────────────────────────────────────────
+    #[test]
+    fn line_break_units_preserve_unicode_text() {
+        let text = "Hello, 世界 👨‍👩‍👧‍👦 test";
+        let units = line_break_units(text);
+        assert!(!units.is_empty());
+        assert!(units.iter().all(|unit| !unit.is_empty()));
+        assert_eq!(units.concat(), text);
+    }
 
-    fn make_break_items(words: &[&str], _line_width: f64) -> (Vec<Item>, f64) {
+    #[test]
+    fn build_items_does_not_break_non_breaking_space() {
         load_test_tries();
         let font_ref = FontRef::new(TEST_FONT).unwrap();
         let shaper_data = ShaperData::new(&font_ref);
-        build_items(
-            words,
-            TEST_FONT,
+        let mut shape_cache = HashMap::new();
+        let (items, _) = build_items(
+            "Hello\u{00A0}world test",
+            &mut shape_cache,
             &shaper_data,
             &font_ref,
             16.0,
@@ -1376,6 +1907,40 @@ mod tests {
             0.0,
             false,
             "en",
+            "auto",
+            true,
+        );
+
+        assert!(items
+            .iter()
+            .any(|item| item.t == T_BOX && item.v.contains('\u{00A0}')));
+        assert!(!items
+            .iter()
+            .any(|item| item.t == T_GLUE && item.v.contains('\u{00A0}')));
+    }
+
+    // ── kp_break_internal ────────────────────────────────────────────────
+
+    fn make_break_items(words: &[&str], _line_width: f64) -> (Vec<Item>, f64) {
+        load_test_tries();
+        let font_ref = FontRef::new(TEST_FONT).unwrap();
+        let shaper_data = ShaperData::new(&font_ref);
+        let text = words.join(" ");
+        let mut shape_cache = HashMap::new();
+        build_items(
+            &text,
+            &mut shape_cache,
+            &shaper_data,
+            &font_ref,
+            16.0,
+            400.0,
+            16.0,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            "en",
+            "auto",
             true,
         )
     }
@@ -1391,22 +1956,37 @@ mod tests {
 
     #[test]
     fn kp_break_forces_multiple_lines() {
-        let words: Vec<&str> = "The quick brown fox jumps over the lazy dog and keeps on running".split_whitespace().collect();
+        let words: Vec<&str> = "The quick brown fox jumps over the lazy dog and keeps on running"
+            .split_whitespace()
+            .collect();
         let (items, _) = make_break_items(&words, 100.0);
         let (breaks, _) = kp_break_internal(&items, 100.0, 0.0, 0.0, 0.0);
-        assert!(breaks.len() > 1, "Narrow width should produce multiple breaks, got {}", breaks.len());
+        assert!(
+            breaks.len() > 1,
+            "Narrow width should produce multiple breaks, got {}",
+            breaks.len()
+        );
     }
 
     #[test]
     fn kp_break_emergency_on_impossible_width() {
-        let (items, _) = make_break_items(&["Supercalifragilisticexpialidocious", "is", "a", "word"], 10.0);
+        let (items, _) = make_break_items(
+            &["Supercalifragilisticexpialidocious", "is", "a", "word"],
+            10.0,
+        );
         let (_, had_emergency) = kp_break_internal(&items, 10.0, 0.0, 0.0, 0.0);
-        assert!(had_emergency, "Impossibly narrow width should trigger emergency breaks");
+        assert!(
+            had_emergency,
+            "Impossibly narrow width should trigger emergency breaks"
+        );
     }
 
     #[test]
     fn kp_break_with_similarity_demerits() {
-        let words: Vec<&str> = "The quick brown fox jumps over the lazy dog and keeps running forever".split_whitespace().collect();
+        let words: Vec<&str> =
+            "The quick brown fox jumps over the lazy dog and keeps running forever"
+                .split_whitespace()
+                .collect();
         let (items, _) = make_break_items(&words, 150.0);
         let (breaks_no_sim, _) = kp_break_internal(&items, 150.0, 0.0, 0.0, 0.0);
         let (breaks_sim, _) = kp_break_internal(&items, 150.0, 2000.0, 0.0, 0.0);
@@ -1439,11 +2019,18 @@ mod tests {
         for line in &lines {
             assert!(line.box_w > 0.0, "Line box_w should be positive");
             assert!(!line.words.is_empty(), "Line should have at least one word");
-            assert_eq!(line.words.len(), line.widths.len(), "words and widths should be parallel");
+            assert_eq!(
+                line.words.len(),
+                line.widths.len(),
+                "words and widths should be parallel"
+            );
         }
 
         // All words should appear exactly once across all lines
-        let all_words: Vec<&str> = lines.iter().flat_map(|l| l.words.iter().map(|w| w.as_str())).collect();
+        let all_words: Vec<&str> = lines
+            .iter()
+            .flat_map(|l| l.words.iter().map(|w| w.as_str()))
+            .collect();
         assert_eq!(all_words, words);
     }
 
@@ -1460,7 +2047,9 @@ mod tests {
 
     #[test]
     fn build_lines_wdth_is_100_without_hz() {
-        let words: Vec<&str> = "one two three four five six seven eight".split_whitespace().collect();
+        let words: Vec<&str> = "one two three four five six seven eight"
+            .split_whitespace()
+            .collect();
         let (items, sp_w) = make_break_items(&words, 120.0);
         let (breaks, _) = kp_break_internal(&items, 120.0, 0.0, 0.0, 0.0);
         let lines = build_lines_from_items(&items, &breaks, sp_w, 120.0, 0.0, 0.0);
@@ -1479,23 +2068,43 @@ mod tests {
         let words: Vec<&str> = text.split_whitespace().collect();
         let font_ref = FontRef::new(TEST_FONT).unwrap();
         let shaper_data = ShaperData::new(&font_ref);
+        let mut shape_cache = HashMap::new();
 
         let (items, sp_w) = build_items(
-            &words, TEST_FONT, &shaper_data, &font_ref,
-            16.0, 400.0, 16.0, 0.0, 0.0, 0.0, false, "en", true,
+            text,
+            &mut shape_cache,
+            &shaper_data,
+            &font_ref,
+            16.0,
+            400.0,
+            16.0,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            "en",
+            "auto",
+            true,
         );
 
         let (breaks, had_emergency) = kp_break_internal(&items, 300.0, 2000.0, 0.0, 0.0);
         assert!(!had_emergency, "Should not need emergency breaks at 300px");
 
         let lines = build_lines_from_items(&items, &breaks, sp_w, 300.0, 0.0, 0.0);
-        assert!(lines.len() >= 2, "Should produce multiple lines, got {}", lines.len());
+        assert!(
+            lines.len() >= 2,
+            "Should produce multiple lines, got {}",
+            lines.len()
+        );
 
         // Verify last line
         assert!(lines.last().unwrap().last);
 
         // Verify all words are present
-        let all_words: Vec<&str> = lines.iter().flat_map(|l| l.words.iter().map(|w| w.as_str())).collect();
+        let all_words: Vec<&str> = lines
+            .iter()
+            .flat_map(|l| l.words.iter().map(|w| w.as_str()))
+            .collect();
         assert_eq!(all_words, words);
 
         // Verify per-word widths are positive
@@ -1510,13 +2119,25 @@ mod tests {
     fn end_to_end_with_hyphenation() {
         load_test_tries();
         let text = "Extraordinary accomplishments require extraordinary dedication";
-        let words: Vec<&str> = text.split_whitespace().collect();
         let font_ref = FontRef::new(TEST_FONT).unwrap();
         let shaper_data = ShaperData::new(&font_ref);
+        let mut shape_cache = HashMap::new();
 
         let (items, sp_w) = build_items(
-            &words, TEST_FONT, &shaper_data, &font_ref,
-            16.0, 400.0, 16.0, 0.0, 0.0, 0.0, true, "en", true,
+            text,
+            &mut shape_cache,
+            &shaper_data,
+            &font_ref,
+            16.0,
+            400.0,
+            16.0,
+            0.0,
+            0.0,
+            0.0,
+            true,
+            "en",
+            "auto",
+            true,
         );
 
         let (breaks, _) = kp_break_internal(&items, 200.0, 0.0, 0.0, 0.0);
@@ -1524,12 +2145,52 @@ mod tests {
         assert!(!lines.is_empty());
 
         // Check if any line ends with a hyphen (hyphenation was used)
-        let has_hyphen = lines.iter().any(|l| {
-            l.words.last().map_or(false, |w| w.ends_with('-'))
-        });
+        let has_hyphen = lines
+            .iter()
+            .any(|l| l.words.last().map_or(false, |w| w.ends_with('-')));
         // Hyphenation may or may not be used depending on the optimal solution,
         // but the layout should still be valid
         let _ = has_hyphen;
+    }
+
+    #[test]
+    fn end_to_end_cjk_text_preserves_original_text_without_spaces() {
+        load_test_tries();
+        let text = "漢字仮名交じり文漢字仮名交じり文";
+        let font_ref = FontRef::new(TEST_FONT).unwrap();
+        let shaper_data = ShaperData::new(&font_ref);
+        let mut shape_cache = HashMap::new();
+
+        let (items, sp_w) = build_items(
+            text,
+            &mut shape_cache,
+            &shaper_data,
+            &font_ref,
+            16.0,
+            400.0,
+            16.0,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            "ja",
+            "auto",
+            true,
+        );
+
+        let (breaks, _) = kp_break_internal(&items, 80.0, 0.0, 0.0, 0.0);
+        let lines = build_lines_from_items(&items, &breaks, sp_w, 80.0, 0.0, 0.0);
+        let reconstructed = lines
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect::<String>();
+
+        assert!(
+            lines.len() > 1,
+            "CJK text should wrap without explicit spaces"
+        );
+        assert_eq!(reconstructed, text);
+        assert!(lines.iter().all(|line| !line.text.contains(' ')));
     }
 
     #[test]
@@ -1545,7 +2206,10 @@ mod tests {
             .collect();
         let (items, sp_w) = make_break_items(&words, 160.0);
         let (breaks, had_emergency) = kp_break_internal(&items, 160.0, 0.0, 0.0, 0.0);
-        assert!(had_emergency, "Oversized words should trigger emergency breaks");
+        assert!(
+            had_emergency,
+            "Oversized words should trigger emergency breaks"
+        );
 
         let lines = build_lines_from_items(&items, &breaks, sp_w, 160.0, 0.0, 0.0);
 
@@ -1583,13 +2247,25 @@ mod tests {
     fn end_to_end_emergency_retry() {
         load_test_tries();
         let text = "Incomprehensibilities characterize antidisestablishmentarianism";
-        let words: Vec<&str> = text.split_whitespace().collect();
         let font_ref = FontRef::new(TEST_FONT).unwrap();
         let shaper_data = ShaperData::new(&font_ref);
+        let mut shape_cache = HashMap::new();
 
         let (items, sp_w) = build_items(
-            &words, TEST_FONT, &shaper_data, &font_ref,
-            16.0, 400.0, 16.0, 0.0, 0.0, 0.0, false, "en", true,
+            text,
+            &mut shape_cache,
+            &shaper_data,
+            &font_ref,
+            16.0,
+            400.0,
+            16.0,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            "en",
+            "auto",
+            true,
         );
 
         // Very narrow — should trigger emergency break
@@ -1598,7 +2274,10 @@ mod tests {
             // Retry with extra stretch (mimics layout_paragraph logic)
             let (breaks2, _) = kp_break_internal(&items, 50.0, 0.0, 25.0, 0.0);
             let lines = build_lines_from_items(&items, &breaks2, sp_w, 50.0, 0.0, 0.0);
-            assert!(!lines.is_empty(), "Emergency retry should still produce lines");
+            assert!(
+                !lines.is_empty(),
+                "Emergency retry should still produce lines"
+            );
         } else {
             let lines = build_lines_from_items(&items, &breaks1, sp_w, 50.0, 0.0, 0.0);
             assert!(!lines.is_empty());
@@ -1608,13 +2287,25 @@ mod tests {
     #[test]
     fn empty_input_produces_no_lines() {
         load_test_tries();
-        let words: Vec<&str> = Vec::new();
         let font_ref = FontRef::new(TEST_FONT).unwrap();
         let shaper_data = ShaperData::new(&font_ref);
+        let mut shape_cache = HashMap::new();
 
         let (items, sp_w) = build_items(
-            &words, TEST_FONT, &shaper_data, &font_ref,
-            16.0, 400.0, 16.0, 0.0, 0.0, 0.0, false, "en", true,
+            "",
+            &mut shape_cache,
+            &shaper_data,
+            &font_ref,
+            16.0,
+            400.0,
+            16.0,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            "en",
+            "auto",
+            true,
         );
 
         // Only final glue + forced penalty
@@ -1647,7 +2338,9 @@ mod tests {
         let en_syls = hyphenate_word("Donaudampfschifffahrt", "en");
         let de_syls = hyphenate_word("Donaudampfschifffahrt", "de");
         // German should find more syllable breaks in a German compound word
-        assert!(de_syls.len() > en_syls.len(),
-            "German should hyphenate German words better: en={en_syls:?} de={de_syls:?}");
+        assert!(
+            de_syls.len() > en_syls.len(),
+            "German should hyphenate German words better: en={en_syls:?} de={de_syls:?}"
+        );
     }
 }

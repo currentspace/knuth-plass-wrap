@@ -208,7 +208,7 @@ export default defineConfig(
 
   // ── Scripts: disable type-checked linting ────────────────────────────
   {
-    files: ["scripts/**/*.ts"],
+    files: ["scripts/**/*.{ts,mjs}"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: globals.node,

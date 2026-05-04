@@ -118,6 +118,9 @@ export function KPHarfrustCard({
       ital: wasmItal,
       hyphenate,
       similarityDemerits: simDem,
+      lang: "en",
+      dir: "auto",
+      writingMode: "horizontal-tb",
       hz: effectiveWdthRange ?? undefined,
     }) as HzLine[];
   }, [
@@ -142,7 +145,7 @@ export function KPHarfrustCard({
     <Card label="Knuth–Plass — Harfrust" accent="#1a6b5a" note={note} sourceUrl={sourceUrl}>
       <div className={className} style={{ width: deferredWidth, ...containerStyle }}>
         {lines.map((line, i) => {
-          const isJustified = !line.last && line.words.length > 1;
+          const isJustified = !line.last && line.segments.length > 1;
           const isHz = line.wdth !== 100;
 
           const fvsParts: string[] = [];
@@ -175,7 +178,7 @@ export function KPHarfrustCard({
 
           return (
             <div key={i} style={baseStyle}>
-              {line.words.join(" ")}
+              {line.text}
             </div>
           );
         })}

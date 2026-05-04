@@ -24,7 +24,7 @@ import { loadHyphenationData } from "./hyphenation";
  *
  * await initNode(undefined, { hyphenationLangs: ["en", "de"] });
  * const font = readFileSync("./fonts/Inter.ttf");
- * const lines = layoutParagraph(font.buffer, {
+ * const lines = layoutParagraph(font, {
  *   text: "Hello world",
  *   fontSize: 16,
  *   lineWidth: 400,
@@ -56,7 +56,7 @@ export async function initNode(
     for (const lang of options.hyphenationLangs) {
       const triePath = resolve(hyphenDir, `${lang}.bin`);
       const trieData = readFileSync(triePath);
-      loadHyphenationData(lang, trieData.buffer);
+      loadHyphenationData(lang, trieData);
     }
   }
 }

@@ -2,9 +2,9 @@
 edition = "2021"
 rust-version = "1.85"
 name = "harfrust-lite"
-version = "0.5.0"
+version = "0.6.0"
 build = false
-description = "A fork of harfrust with feature-gated script shapers for smaller WASM binaries."
+description = "A fork of HarfRust 0.6.0 with feature-gated script shapers for smaller WASM binaries."
 license = "MIT"
 
 [lib]
@@ -21,10 +21,10 @@ shaper-arabic = []
 shaper-indic = []
 shaper-hangul = []
 shaper-hebrew = []
-shaper-khmer = []
-shaper-myanmar = []
+shaper-khmer = ["shaper-indic"]
+shaper-myanmar = ["shaper-indic"]
 shaper-thai = []
-shaper-use = []
+shaper-use = ["shaper-arabic"]
 aat = []
 
 [dependencies.bitflags]
@@ -38,12 +38,16 @@ features = ["extern_crate_alloc"]
 version = "0.1"
 
 [dependencies.read-fonts]
-version = "0.37.0"
+version = "0.39.0"
 features = ["libm"]
 default-features = false
 
 [dependencies.smallvec]
 version = "1.14"
+
+[dev-dependencies]
+libc = "0.2"
+pico-args = { version = "0.5", features = ["eq-separator"] }
 
 [lints.clippy]
 cast_lossless = "allow"

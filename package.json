@@ -1,15 +1,18 @@
 {
   "name": "knuth-plass-wrap",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "type": "module",
-  "description": "TeX-quality Knuth-Plass line breaking for the web, powered by HarfBuzz WASM",
+  "description": "Unicode-aware Knuth-Plass line breaking for the web, powered by HarfBuzz WASM",
   "license": "MIT",
   "author": "Brian Meek",
   "repository": {
     "type": "git",
-    "url": "https://github.com/currentspace/knuth-plass-wrap"
+    "url": "git+https://github.com/currentspace/knuth-plass-wrap.git"
   },
   "homepage": "https://knuth-plass-wrap.current.space",
+  "bugs": {
+    "url": "https://github.com/currentspace/knuth-plass-wrap/issues"
+  },
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/pkg-index.d.ts",
@@ -39,6 +42,7 @@
     "./wasm/*": "./dist/wasm/*"
   },
   "files": [
+    "CHANGELOG.md",
     "dist/*.js",
     "dist/*.cjs",
     "dist/*.d.ts",
@@ -70,15 +74,21 @@
     "screenshot": "node --import tsx scripts/screenshot.ts",
     "generate:presets": "node --import tsx scripts/generate-preset-pngs.ts",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "test": "cd wasm && cargo test",
     "test:hypher": "cd crates/hypher-dynamic && cargo test",
+    "test:harfrust": "cargo check --manifest-path crates/harfrust-lite/Cargo.toml --no-default-features --features std && cargo check --manifest-path crates/harfrust-lite/Cargo.toml --all-features && cargo test --manifest-path crates/harfrust-lite/Cargo.toml --no-default-features --features std",
     "test:ssr": "node --import tsx scripts/test-ssr.ts",
     "test:e2e": "node --import tsx scripts/test-all-presets.ts",
     "test:e2e:pw": "playwright test",
+    "test:all": "pnpm build && pnpm lint && pnpm typecheck && pnpm test && pnpm test:hypher && pnpm test:harfrust && pnpm test:ssr && pnpm test:e2e && pnpm test:e2e:pw",
+    "release:check": "pnpm test:all && node scripts/publish-npm-release.mjs --dry-run",
+    "release:publish:npm": "node scripts/publish-npm-release.mjs",
+    "release:latest": "node scripts/release-latest.mjs",
     "prepublishOnly": "pnpm build"
   },
   "peerDependencies": {
-    "react": "^18.0.0 || ^19.0.0"
+    "react": "^19.0.0"
   },
   "peerDependenciesMeta": {
     "react": {

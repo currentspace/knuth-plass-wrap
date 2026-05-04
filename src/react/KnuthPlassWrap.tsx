@@ -79,8 +79,12 @@ export interface KnuthPlassWrapProps {
   /** Enable automatic hyphenation. Default: false. */
   hyphenate?: boolean;
   /** ISO 639-1 language code for hyphenation (e.g. `"en"`, `"de"`, `"fr"`).
-   *  Only used when `hyphenate` is `true`. Default: `"en"`. */
+   *  Also passed through for language-sensitive shaping. Default: `"en"`. */
   lang?: string;
+  /** Text direction metadata. Default: "auto". */
+  dir?: "auto" | "ltr" | "rtl";
+  /** CSS writing-mode metadata. KP optimization is horizontal-width based. */
+  writingMode?: "horizontal-tb" | "vertical-rl" | "vertical-lr";
   /** Enable similarity demerits. Default: true. */
   similarity?: boolean;
   /** Hz justification wdth axis range. */
@@ -147,6 +151,8 @@ export function KnuthPlassWrap({
   opticalSizing = "auto",
   hyphenate = false,
   lang = "en",
+  dir = "auto",
+  writingMode = "horizontal-tb",
   similarity = true,
   hz,
   className,
@@ -211,6 +217,8 @@ export function KnuthPlassWrap({
         ital: wasmItal,
         hyphenate,
         lang,
+        dir,
+        writingMode,
         similarityDemerits: similarity ? SIMILAR_DEM : 0,
         hz,
       });
@@ -228,6 +236,8 @@ export function KnuthPlassWrap({
     wasmItal,
     hyphenate,
     lang,
+    dir,
+    writingMode,
     similarity,
     hz,
   ]);
@@ -250,6 +260,8 @@ export function KnuthPlassWrap({
     lineHeight: `${lh}px`,
     color,
     whiteSpace: "nowrap",
+    direction: dir === "auto" ? undefined : dir,
+    writingMode,
     fontKerning: "normal",
     fontOpticalSizing: cssOpticalSizing,
     fontVariantLigatures: liga ? "common-ligatures" : "no-common-ligatures",
@@ -263,9 +275,9 @@ export function KnuthPlassWrap({
   }
 
   return (
-    <div className={className} style={style}>
+    <div className={className} style={style} lang={lang} dir={dir}>
       {lines.map((line, i) => {
-        const isJustified = !line.last && line.words.length > 1;
+        const isJustified = !line.last && line.segments.length > 1;
         const isHz = "wdth" in line && (line as HzLine).wdth !== 100;
 
         const divStyle: CSSProperties = {
@@ -293,7 +305,7 @@ export function KnuthPlassWrap({
 
         return (
           <div key={i} style={divStyle}>
-            {line.words.join(" ")}
+            {line.text}
           </div>
         );
       })}

@@ -12,6 +12,8 @@ export interface Font {
 }
 
 export interface Line {
+  text: string;
+  segments: string[];
   words: string[];
   widths: number[];
   boxW: number;

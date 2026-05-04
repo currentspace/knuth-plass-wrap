@@ -36,12 +36,21 @@ IGNORE_TEST_CASES = [
 ]
 
 
-def check_hb_build(hb_shape_exe):
-    if not hb_shape_exe.exists():
-        print("Build harfbuzz first using:")
-        print("    meson builddir")
-        print("    ninja -Cbuilddir")
-        exit(1)
+def check_hb_build(hb_dir, hb_shape_exe):
+    if hb_shape_exe.exists():
+        return
+
+    build_dir = hb_dir / "builddir"
+    if build_dir.exists():
+        subprocess.run(["ninja", "-C", str(build_dir)], check=True)
+        if hb_shape_exe.exists():
+            return
+
+    print("Build harfbuzz first using:")
+    print(f"    cd {hb_dir}")
+    print("    meson setup builddir")
+    print("    ninja -C builddir")
+    exit(1)
 
 
 def update_font_path(tests_name, fontfile):
@@ -70,8 +79,6 @@ def convert_unicodes(unicodes):
 
 def prune_test_options(options):
     options = options.replace("--shaper=ot", "")
-    options = options.replace(" --font-funcs=ft", "").replace("--font-funcs=ft", "")
-    options = options.replace(" --font-funcs=ot", "").replace("--font-funcs=ot", "")
     # We don't support font scaling
     options = options.replace("--font-size=1000", "")
     # We don't care about extents
@@ -119,7 +126,7 @@ def convert_test_file(
     options_list.insert(0, str(hb_shape_exe))
 
     abs_font_path = (
-        root_dir.joinpath(fontfile_rs)
+        root_dir.joinpath("harfrust").joinpath(fontfile_rs)
         if custom
         else (
             root_dir.joinpath("test/shape/data")
@@ -141,7 +148,7 @@ def convert_test_file(
         )
 
     options_rs = options
-    options_rs = options_rs.replace('"', '\\"')
+    options_rs = options_rs.replace('"', "")
     options_rs = options_rs.replace(" --single-par", "")
 
     if not fontfile.startswith("/"):
@@ -228,25 +235,25 @@ def convert_test_files(root_dir, hb_shape_exe, tests_dir, tests_name, files, cus
     # Strip the extra trailing newline to avoid formatting churn
     rust_code = rust_code[:-1]
     tests_name_snake_case = tests_name.replace("-", "_")
-    with open(f"../tests/shaping/{tests_name_snake_case}.rs", "w") as f:
+    with open(f"../harfrust/tests/shaping/{tests_name_snake_case}.rs", "w") as f:
         f.write(rust_code)
 
     return fonts
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: gen-shaping-tests.py /path/to/harfbuzz-src")
+    if len(sys.argv) > 2:
+        print("Usage: gen-shaping-tests.py [/path/to/harfbuzz-src]")
         exit(1)
 
-    hb_dir = Path(sys.argv[1])
+    hb_dir = Path(sys.argv[1]).expanduser() if len(sys.argv) == 2 else Path("~/harfbuzz").expanduser()
     assert hb_dir.exists()
 
     rb_root = pathlib.Path(__file__).parent.parent
 
     # Check that harfbuzz was built.
     hb_shape_exe = hb_dir.joinpath("builddir/util/hb-shape")
-    check_hb_build(hb_shape_exe)
+    check_hb_build(hb_dir, hb_shape_exe)
 
     def to_hb_absolute(name):
         return hb_dir / f"test/shape/data/{name}/tests"
@@ -262,7 +269,7 @@ def main():
         for filename in dir_used_fonts:
             shutil.copy(
                 hb_dir / f"test/shape/data/{test_dir_name}/fonts/{filename}",
-                f"../tests/fonts/{test_dir_name}",
+                f"../harfrust/tests/fonts/{test_dir_name}",
             )
 
     # Next we convert harfbuzz MacOS tests as well as custom MacOS tests, but only if the person running this
@@ -271,7 +278,7 @@ def main():
     if platform == "darwin":
         # macos.tests are not directly copied from harfbuzz, but instead from
         # `macos.tests` in this folder. See the README for more information.
-        tests_dir = rb_root / "tests" / "custom"
+        tests_dir = rb_root / "harfrust" / "tests" / "custom"
         convert_test_files(
             rb_root, hb_shape_exe, tests_dir, "macos", ["macos.tests"], False
         )
@@ -281,7 +288,7 @@ def main():
     # harfbuzz tests, but are instead stored in the rustybuzz folder. In addition to that, font paths
     # are relative to fonts stored inside of rustybuzz and not harfbuzz)
     convert_test_folder(
-        rb_root, hb_shape_exe, rb_root / "tests" / "custom", "custom", True
+        rb_root, hb_shape_exe, rb_root / "harfrust" / "tests" / "custom", "custom", True
     )
 
 
