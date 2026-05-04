@@ -60,12 +60,10 @@ jobs:
         env:
           KP_DIST_TAG: ${{ inputs.dist_tag }}
           KP_DRY_RUN: "1"
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-npm-release.mjs
 
       - name: Publish npm package
         if: ${{ !inputs.dry_run }}
         env:
           KP_DIST_TAG: ${{ inputs.dist_tag }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-npm-release.mjs
