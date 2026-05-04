@@ -12,6 +12,14 @@ export function shapingCSS(liga = true): Record<string, string> {
 }
 
 const _wdthCache = new Map<string, WdthRange | null>();
+const NORMAL_WDTH = 100;
+const LOCAL_WDTH_PROBE_DELTA = 5;
+const MIN_RENDERED_AXIS_DELTA_PX = 0.5;
+
+function measureWdth(el: HTMLElement, wdth: number): number {
+  el.style.fontVariationSettings = `"wdth" ${wdth}`;
+  return el.getBoundingClientRect().width;
+}
 
 export function detectWdthSupport(fontCSS: string, liga = true): WdthRange | null {
   const key = `${fontCSS}|liga=${liga ? 1 : 0}`;
@@ -28,29 +36,39 @@ export function detectWdthSupport(fontCSS: string, liga = true): WdthRange | nul
   document.body.appendChild(el);
   el.textContent = "Hamburgefontsiv";
 
-  el.style.fontVariationSettings = "'wdth' 100";
-  const w100 = el.getBoundingClientRect().width;
-
-  el.style.fontVariationSettings = "'wdth' 85";
-  const w85 = el.getBoundingClientRect().width;
-
-  el.style.fontVariationSettings = "'wdth' 115";
-  const w115 = el.getBoundingClientRect().width;
+  const w100 = measureWdth(el, NORMAL_WDTH);
+  const wNarrow = measureWdth(el, NORMAL_WDTH - LOCAL_WDTH_PROBE_DELTA);
+  const wWide = measureWdth(el, NORMAL_WDTH + LOCAL_WDTH_PROBE_DELTA);
 
   el.parentNode?.removeChild(el);
 
-  if (Math.abs(w100 - w85) < 0.5 && Math.abs(w100 - w115) < 0.5) return null;
+  const narrowDelta = w100 - wNarrow;
+  const wideDelta = wWide - w100;
+  const hasNarrowResponse = narrowDelta > MIN_RENDERED_AXIS_DELTA_PX;
+  const hasWideResponse = wideDelta > MIN_RENDERED_AXIS_DELTA_PX;
 
-  const pxPerUnit = (w115 - w85) / 30;
-  if (Math.abs(pxPerUnit) < 0.001) return null;
+  // Hz justification needs small, continuous width-axis changes around 100.
+  // Some browser/font pairs expose wdth but quantize nearby values into named
+  // instances; sampling far from 100 would misclassify those as usable.
+  if (!hasNarrowResponse && !hasWideResponse) return null;
 
   const targetDelta = w100 * HZ_TARGET_PCT;
-  const unitRange = Math.ceil(targetDelta / Math.abs(pxPerUnit));
+  const min = hasNarrowResponse
+    ? Math.max(
+        75,
+        NORMAL_WDTH -
+          Math.ceil(targetDelta / (narrowDelta / LOCAL_WDTH_PROBE_DELTA)),
+      )
+    : NORMAL_WDTH;
+  const max = hasWideResponse
+    ? Math.min(
+        125,
+        NORMAL_WDTH +
+          Math.ceil(targetDelta / (wideDelta / LOCAL_WDTH_PROBE_DELTA)),
+      )
+    : NORMAL_WDTH;
 
-  const range: WdthRange = {
-    min: Math.max(75, 100 - unitRange),
-    max: Math.min(125, 100 + unitRange),
-  };
+  const range: WdthRange = { min, max };
   _wdthCache.set(key, range);
   return range;
 }
