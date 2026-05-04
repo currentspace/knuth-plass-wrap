@@ -25,7 +25,7 @@ async function main() {
   const fontPath = resolve(__dirname, "../wasm/tests/fixtures/DMMono-Regular.ttf");
   const fontData = readFileSync(fontPath);
 
-  const lines = layoutParagraph(fontData.buffer as ArrayBuffer, {
+  const lines = layoutParagraph(fontData, {
     text: "The problem of breaking a paragraph into lines of approximately equal length has been important since the invention of movable type.",
     fontSize: 16,
     lineWidth: 300,
@@ -33,7 +33,7 @@ async function main() {
 
   console.log(`SSR test: ${lines.length} lines produced`);
   for (const line of lines) {
-    console.log(`  [${line.last ? "last" : "    "}] ${line.words.join(" ")}`);
+    console.log(`  [${line.last ? "last" : "    "}] ${line.text}`);
   }
 
   if (lines.length < 2) {
@@ -46,7 +46,7 @@ async function main() {
   }
 
   // Test with hyphenation + language
-  const deLines = layoutParagraph(fontData.buffer as ArrayBuffer, {
+  const deLines = layoutParagraph(fontData, {
     text: "Donaudampfschifffahrtsgesellschaftskapitän fährt über den Fluss mit Geschwindigkeit.",
     fontSize: 16,
     lineWidth: 200,
@@ -56,7 +56,7 @@ async function main() {
 
   console.log(`\nGerman hyphenation test: ${deLines.length} lines`);
   for (const line of deLines) {
-    console.log(`  [${line.last ? "last" : "    "}] ${line.words.join(" ")}`);
+    console.log(`  [${line.last ? "last" : "    "}] ${line.text}`);
   }
 
   if (deLines.length < 2) {
@@ -65,7 +65,7 @@ async function main() {
   }
 
   // Test English hyphenation
-  const enLines = layoutParagraph(fontData.buffer as ArrayBuffer, {
+  const enLines = layoutParagraph(fontData, {
     text: "Extraordinary accomplishments require extraordinary dedication and perseverance throughout difficulties.",
     fontSize: 16,
     lineWidth: 200,
@@ -75,7 +75,7 @@ async function main() {
 
   console.log(`\nEnglish hyphenation test: ${enLines.length} lines`);
   for (const line of enLines) {
-    console.log(`  [${line.last ? "last" : "    "}] ${line.words.join(" ")}`);
+    console.log(`  [${line.last ? "last" : "    "}] ${line.text}`);
   }
 
   if (enLines.length < 2) {
@@ -84,7 +84,7 @@ async function main() {
   }
 
   // Test graceful degradation: layout without hyphenation data for a language
-  const frLines = layoutParagraph(fontData.buffer as ArrayBuffer, {
+  const frLines = layoutParagraph(fontData, {
     text: "Bonjour le monde extraordinaire",
     fontSize: 16,
     lineWidth: 200,
@@ -94,7 +94,7 @@ async function main() {
 
   console.log(`\nFrench (no trie data) test: ${frLines.length} lines`);
   for (const line of frLines) {
-    console.log(`  [${line.last ? "last" : "    "}] ${line.words.join(" ")}`);
+    console.log(`  [${line.last ? "last" : "    "}] ${line.text}`);
   }
 
   // Should still produce valid output (just without hyphenation)

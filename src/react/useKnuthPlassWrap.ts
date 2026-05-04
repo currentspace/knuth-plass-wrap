@@ -44,8 +44,12 @@ export interface UseKnuthPlassWrapOptions {
   /** Enable automatic hyphenation. Default: `false`. */
   hyphenate?: boolean;
   /** ISO 639-1 language code for hyphenation (e.g. `"en"`, `"de"`, `"fr"`).
-   *  Only used when `hyphenate` is `true`. Default: `"en"`. */
+   *  Also passed through for language-sensitive shaping. Default: `"en"`. */
   lang?: string;
+  /** Text direction metadata. Default: `"auto"`. */
+  dir?: "auto" | "ltr" | "rtl";
+  /** CSS writing-mode metadata. KP optimization is horizontal-width based. */
+  writingMode?: "horizontal-tb" | "vertical-rl" | "vertical-lr";
   /** Apply similarity demerits for adjacent line tightness. Default: `true`. */
   similarity?: boolean;
   /** Hz-program justification using the font's `wdth` axis. */
@@ -86,6 +90,8 @@ export function useKnuthPlassWrap(
     opsz,
     hyphenate = false,
     lang = "en",
+    dir = "auto",
+    writingMode = "horizontal-tb",
     similarity = true,
     hz,
   } = options;
@@ -109,6 +115,8 @@ export function useKnuthPlassWrap(
       opsz: effectiveOpsz,
       hyphenate,
       lang,
+      dir,
+      writingMode,
       similarityDemerits: similarity ? SIMILAR_DEM : 0,
       hz,
     };
@@ -123,6 +131,8 @@ export function useKnuthPlassWrap(
     effectiveOpsz,
     hyphenate,
     lang,
+    dir,
+    writingMode,
     similarity,
     hz,
   ]);

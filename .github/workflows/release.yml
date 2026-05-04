@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dist_tag:
+        description: npm dist-tag to publish
+        required: true
+        default: canary
+        type: choice
+        options:
+          - canary
+          - rc
+          - latest
+      dry_run:
+        description: Build and dry-run npm publish
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run release checks
+        run: pnpm test:all
+
+      - name: Publish npm package dry run
+        if: ${{ inputs.dry_run }}
+        env:
+          KP_DIST_TAG: ${{ inputs.dist_tag }}
+          KP_DRY_RUN: "1"
+        run: node scripts/publish-npm-release.mjs
+
+      - name: Publish npm package
+        if: ${{ !inputs.dry_run }}
+        env:
+          KP_DIST_TAG: ${{ inputs.dist_tag }}
+        run: node scripts/publish-npm-release.mjs

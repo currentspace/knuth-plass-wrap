@@ -6,4 +6,7 @@ screenshots/
 *.tsbuildinfo
 wasm/target/
 wasm/pkg/
+crates/**/target/
+test-results/
+playwright-report/
 scripts/tex/tmp/

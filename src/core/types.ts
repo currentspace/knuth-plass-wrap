@@ -1,8 +1,12 @@
 /** A single line of justified text produced by the layout engine. */
 export interface Line {
+  /** Exact text to render for this line. */
+  text: string;
+  /** Text segments used by the layout engine, in visual order for this release. */
+  segments: string[];
   /** Words on this line, in order. */
   words: string[];
-  /** Per-word widths in pixels, parallel to `words`. */
+  /** Per-segment widths in pixels, parallel to `segments`. */
   widths: number[];
   /** Total width of all word boxes (excluding spaces). */
   boxW: number;
@@ -46,8 +50,12 @@ export interface LayoutOptions {
   /** Enable automatic hyphenation. Default: `false`. */
   hyphenate?: boolean;
   /** ISO 639-1 language code for hyphenation (e.g. `"en"`, `"de"`, `"fr"`).
-   *  Only used when `hyphenate` is `true`. Default: `"en"`. */
+   *  Also passed through for language-sensitive shaping. Default: `"en"`. */
   lang?: string;
+  /** Text direction metadata. Default: `"auto"`. */
+  dir?: "auto" | "ltr" | "rtl";
+  /** CSS writing-mode metadata. KP optimization is horizontal-width based. */
+  writingMode?: "horizontal-tb" | "vertical-rl" | "vertical-lr";
   /**
    * Similarity demerits penalise adjacent lines with very different
    * tightness. Set to 0 to disable. Default: `2000`.
@@ -71,3 +79,6 @@ export type InitInput =
   | Response
   | BufferSource
   | WebAssembly.Module;
+
+/** Font or hyphenation bytes accepted by the core layout APIs. */
+export type BinaryData = BufferSource;

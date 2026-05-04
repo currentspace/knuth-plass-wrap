@@ -31,7 +31,7 @@ pub mod face;
 mod glyph_metrics;
 mod glyph_names;
 mod kerning;
-#[cfg(any(feature = "shaper-use"))]
+#[cfg(feature = "shaper-use")]
 mod machine_cursor;
 mod ot;
 mod ot_layout;
@@ -48,6 +48,7 @@ mod ot_shaper;
 #[cfg(feature = "shaper-arabic")]
 mod ot_shaper_arabic;
 #[cfg(feature = "shaper-arabic")]
+#[rustfmt::skip]
 mod ot_shaper_arabic_table;
 #[cfg(feature = "shaper-hangul")]
 mod ot_shaper_hangul;
@@ -68,7 +69,12 @@ mod ot_shaper_khmer_machine;
 mod ot_shaper_myanmar;
 #[cfg(feature = "shaper-myanmar")]
 mod ot_shaper_myanmar_machine;
-#[cfg(any(feature = "shaper-indic", feature = "shaper-khmer", feature = "shaper-myanmar", feature = "shaper-use"))]
+#[cfg(any(
+    feature = "shaper-indic",
+    feature = "shaper-khmer",
+    feature = "shaper-myanmar",
+    feature = "shaper-use"
+))]
 mod ot_shaper_syllabic;
 #[cfg(feature = "shaper-thai")]
 mod ot_shaper_thai;
@@ -86,6 +92,8 @@ mod tables;
 mod tag;
 mod tag_table;
 mod text_parser;
+#[rustfmt::skip]
+mod unicode_emoji_table;
 #[rustfmt::skip]
 mod ucd_table;
 mod unicode;

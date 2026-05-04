@@ -18,7 +18,7 @@ export function JustifiedLines({
   return (
     <div style={{ width: lineWidth }}>
       {lines.map((line, i) => {
-        const isJustified = !line.last && line.words.length > 1;
+        const isJustified = !line.last && line.segments.length > 1;
 
         const divStyle: CSSProperties = {
           width: lineWidth,
@@ -39,7 +39,7 @@ export function JustifiedLines({
 
         return (
           <div key={i} style={divStyle}>
-            {line.words.join(" ")}
+            {line.text}
           </div>
         );
       })}

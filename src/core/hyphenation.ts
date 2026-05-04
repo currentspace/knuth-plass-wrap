@@ -1,5 +1,14 @@
+import type { BinaryData } from "./types";
+
 let _loadFn: ((lang: string, data: Uint8Array) => void) | null = null;
 let _hasFn: ((lang: string) => boolean) | null = null;
+
+function toUint8Array(data: BinaryData): Uint8Array {
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return new Uint8Array(data);
+}
 
 /** @internal Wire up the WASM bindings after init(). */
 export function _setHyphenationBindings(
@@ -19,13 +28,13 @@ export function _setHyphenationBindings(
  * @param lang - ISO 639-1 language code (e.g. `"en"`, `"de"`)
  * @param data - The raw trie binary (contents of `<lang>.bin`)
  */
-export function loadHyphenationData(lang: string, data: ArrayBuffer): void {
+export function loadHyphenationData(lang: string, data: BinaryData): void {
   if (!_loadFn) {
     throw new Error(
       "knuth-plass-wrap: WASM not initialized. Call init() first.",
     );
   }
-  _loadFn(lang, new Uint8Array(data));
+  _loadFn(lang, toUint8Array(data));
 }
 
 /**
@@ -39,6 +48,7 @@ export function hasHyphenationData(lang: string): boolean {
 }
 
 const _fetchCache = new Map<string, Promise<void>>();
+const DEFAULT_HYPHENATION_BASE_URL = "../../wasm/pkg/hyphenation/";
 
 /**
  * Fetch and load hyphenation trie data for one or more languages.
@@ -64,7 +74,7 @@ export async function loadHyphenationLangs(
 ): Promise<void> {
   const baseUrl =
     options?.baseUrl ??
-    new URL("../../wasm/pkg/hyphenation/", import.meta.url).href;
+    new URL(DEFAULT_HYPHENATION_BASE_URL, import.meta.url).href;
 
   const promises = langs.map((lang) => {
     if (hasHyphenationData(lang)) return Promise.resolve();

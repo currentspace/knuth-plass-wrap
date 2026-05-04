@@ -17,7 +17,6 @@ use crate::hb::unicode::hb_gc::{
     HB_UNICODE_GENERAL_CATEGORY_UPPERCASE_LETTER,
 };
 use crate::hb::unicode::GeneralCategory;
-use crate::BufferClusterLevel;
 use crate::BufferFlags;
 use crate::{Direction, Feature, Language, Script};
 use core::ptr;
@@ -533,7 +532,7 @@ fn setup_masks(ctx: &mut hb_ot_shape_context_t) {
 }
 
 fn setup_masks_fraction(ctx: &mut hb_ot_shape_context_t) {
-    let buffer = &mut ctx.buffer;
+    let buffer = &mut *ctx.buffer;
     if buffer.scratch_flags & HB_BUFFER_SCRATCH_FLAG_HAS_FRACTION_SLASH == 0 || !ctx.plan.has_frac {
         return;
     }
@@ -713,13 +712,9 @@ fn insert_dotted_circle(buffer: &mut hb_buffer_t, face: &hb_font_t) {
 
 fn form_clusters(buffer: &mut hb_buffer_t) {
     if buffer.scratch_flags & HB_BUFFER_SCRATCH_FLAG_HAS_CONTINUATIONS != 0 {
-        if BufferClusterLevel::new(buffer.cluster_level).is_graphemes() {
-            foreach_grapheme!(buffer, start, end, { buffer.merge_clusters(start, end) });
-        } else {
-            foreach_grapheme!(buffer, start, end, {
-                buffer.unsafe_to_break(Some(start), Some(end));
-            });
-        }
+        foreach_grapheme!(buffer, start, end, {
+            buffer.merge_grapheme_clusters(start, end);
+        });
     }
 }
 

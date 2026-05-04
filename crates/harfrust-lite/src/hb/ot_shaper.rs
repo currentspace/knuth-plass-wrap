@@ -4,11 +4,23 @@ use core::any::Any;
 use crate::hb::unicode::Codepoint;
 
 use super::buffer::*;
+#[cfg(any(feature = "shaper-indic", feature = "shaper-use"))]
 use super::common::TagExt;
 use super::ot_shape::*;
 use super::ot_shape_normalize::*;
 use super::ot_shape_plan::hb_ot_shape_plan_t;
-use super::{hb_font_t, hb_tag_t, script, Direction, Script};
+#[cfg(any(
+    feature = "shaper-arabic",
+    feature = "shaper-thai",
+    feature = "shaper-hangul",
+    feature = "shaper-hebrew",
+    feature = "shaper-indic",
+    feature = "shaper-khmer",
+    feature = "shaper-myanmar",
+    feature = "shaper-use",
+))]
+use super::script;
+use super::{hb_font_t, hb_tag_t, Direction, Script};
 
 impl GlyphInfo {
     declare_buffer_var!(
@@ -131,7 +143,6 @@ pub fn hb_ot_shape_complex_categorize(
     direction: Direction,
     gsub_script: Option<hb_tag_t>,
 ) -> &'static hb_ot_shaper_t {
-    // Suppress unused variable warnings when shapers are disabled.
     let _ = direction;
     let _ = gsub_script;
 
@@ -157,22 +168,37 @@ pub fn hb_ot_shape_complex_categorize(
         script::HEBREW => &crate::hb::ot_shaper_hebrew::HEBREW_SHAPER,
 
         #[cfg(any(feature = "shaper-indic", feature = "shaper-use"))]
-        script::BENGALI | script::DEVANAGARI | script::GUJARATI | script::GURMUKHI
-        | script::KANNADA | script::MALAYALAM | script::ORIYA | script::TAMIL
+        script::BENGALI
+        | script::DEVANAGARI
+        | script::GUJARATI
+        | script::GURMUKHI
+        | script::KANNADA
+        | script::MALAYALAM
+        | script::ORIYA
+        | script::TAMIL
         | script::TELUGU => {
-            if gsub_script == Some(hb_tag_t::default_script()) ||
-               gsub_script == Some(hb_tag_t::new(b"latn")) {
+            if gsub_script == Some(hb_tag_t::default_script())
+                || gsub_script == Some(hb_tag_t::new(b"latn"))
+            {
                 &DEFAULT_SHAPER
             } else if gsub_script.is_some_and(|tag| tag.to_be_bytes()[3] == b'3') {
                 #[cfg(feature = "shaper-use")]
-                { &crate::hb::ot_shaper_use::UNIVERSAL_SHAPER }
+                {
+                    &crate::hb::ot_shaper_use::UNIVERSAL_SHAPER
+                }
                 #[cfg(not(feature = "shaper-use"))]
-                { &DEFAULT_SHAPER }
+                {
+                    &DEFAULT_SHAPER
+                }
             } else {
                 #[cfg(feature = "shaper-indic")]
-                { &crate::hb::ot_shaper_indic::INDIC_SHAPER }
+                {
+                    &crate::hb::ot_shaper_indic::INDIC_SHAPER
+                }
                 #[cfg(not(feature = "shaper-indic"))]
-                { &DEFAULT_SHAPER }
+                {
+                    &DEFAULT_SHAPER
+                }
             }
         }
 
@@ -181,9 +207,9 @@ pub fn hb_ot_shape_complex_categorize(
 
         #[cfg(feature = "shaper-myanmar")]
         script::MYANMAR => {
-            if gsub_script == Some(hb_tag_t::default_script()) ||
-               gsub_script == Some(hb_tag_t::new(b"latn")) ||
-               gsub_script == Some(hb_tag_t::new(b"mymr"))
+            if gsub_script == Some(hb_tag_t::default_script())
+                || gsub_script == Some(hb_tag_t::new(b"latn"))
+                || gsub_script == Some(hb_tag_t::new(b"mymr"))
             {
                 &DEFAULT_SHAPER
             } else {
@@ -195,44 +221,103 @@ pub fn hb_ot_shape_complex_categorize(
         script::MYANMAR_ZAWGYI => &crate::hb::ot_shaper_myanmar::MYANMAR_ZAWGYI_SHAPER,
 
         #[cfg(feature = "shaper-use")]
-        script::TIBETAN | script::MONGOLIAN | script::SINHALA
-        | script::BUHID | script::HANUNOO | script::TAGALOG | script::TAGBANWA
-        | script::LIMBU | script::TAI_LE
-        | script::BUGINESE | script::KHAROSHTHI | script::SYLOTI_NAGRI | script::TIFINAGH
-        | script::BALINESE | script::NKO | script::PHAGS_PA
-        | script::CHAM | script::KAYAH_LI | script::LEPCHA | script::REJANG
-        | script::SAURASHTRA | script::SUNDANESE
-        | script::EGYPTIAN_HIEROGLYPHS | script::JAVANESE | script::KAITHI
-        | script::MEETEI_MAYEK | script::TAI_THAM | script::TAI_VIET
-        | script::BATAK | script::BRAHMI | script::MANDAIC
-        | script::CHAKMA | script::MIAO | script::SHARADA | script::TAKRI
-        | script::DUPLOYAN | script::GRANTHA | script::KHOJKI | script::KHUDAWADI
-        | script::MAHAJANI | script::MANICHAEAN | script::MODI | script::PAHAWH_HMONG
-        | script::PSALTER_PAHLAVI | script::SIDDHAM | script::TIRHUTA
-        | script::AHOM | script::MULTANI
-        | script::ADLAM | script::BHAIKSUKI | script::MARCHEN | script::NEWA
-        | script::MASARAM_GONDI | script::SOYOMBO | script::ZANABAZAR_SQUARE
-        | script::DOGRA | script::GUNJALA_GONDI | script::HANIFI_ROHINGYA
-        | script::MAKASAR | script::MEDEFAIDRIN | script::OLD_SOGDIAN | script::SOGDIAN
-        | script::ELYMAIC | script::NANDINAGARI | script::NYIAKENG_PUACHUE_HMONG
+        script::TIBETAN
+        | script::MONGOLIAN
+        | script::SINHALA
+        | script::BUHID
+        | script::HANUNOO
+        | script::TAGALOG
+        | script::TAGBANWA
+        | script::LIMBU
+        | script::TAI_LE
+        | script::BUGINESE
+        | script::KHAROSHTHI
+        | script::SYLOTI_NAGRI
+        | script::TIFINAGH
+        | script::BALINESE
+        | script::NKO
+        | script::PHAGS_PA
+        | script::CHAM
+        | script::KAYAH_LI
+        | script::LEPCHA
+        | script::REJANG
+        | script::SAURASHTRA
+        | script::SUNDANESE
+        | script::EGYPTIAN_HIEROGLYPHS
+        | script::JAVANESE
+        | script::KAITHI
+        | script::MEETEI_MAYEK
+        | script::TAI_THAM
+        | script::TAI_VIET
+        | script::BATAK
+        | script::BRAHMI
+        | script::MANDAIC
+        | script::CHAKMA
+        | script::MIAO
+        | script::SHARADA
+        | script::TAKRI
+        | script::DUPLOYAN
+        | script::GRANTHA
+        | script::KHOJKI
+        | script::KHUDAWADI
+        | script::MAHAJANI
+        | script::MANICHAEAN
+        | script::MODI
+        | script::PAHAWH_HMONG
+        | script::PSALTER_PAHLAVI
+        | script::SIDDHAM
+        | script::TIRHUTA
+        | script::AHOM
+        | script::MULTANI
+        | script::ADLAM
+        | script::BHAIKSUKI
+        | script::MARCHEN
+        | script::NEWA
+        | script::MASARAM_GONDI
+        | script::SOYOMBO
+        | script::ZANABAZAR_SQUARE
+        | script::DOGRA
+        | script::GUNJALA_GONDI
+        | script::HANIFI_ROHINGYA
+        | script::MAKASAR
+        | script::MEDEFAIDRIN
+        | script::OLD_SOGDIAN
+        | script::SOGDIAN
+        | script::ELYMAIC
+        | script::NANDINAGARI
+        | script::NYIAKENG_PUACHUE_HMONG
         | script::WANCHO
-        | script::CHORASMIAN | script::DIVES_AKURU | script::KHITAN_SMALL_SCRIPT
+        | script::CHORASMIAN
+        | script::DIVES_AKURU
+        | script::KHITAN_SMALL_SCRIPT
         | script::YEZIDI
-        | script::CYPRO_MINOAN | script::OLD_UYGHUR | script::TANGSA | script::TOTO
+        | script::CYPRO_MINOAN
+        | script::OLD_UYGHUR
+        | script::TANGSA
+        | script::TOTO
         | script::VITHKUQI
-        | script::KAWI | script::NAG_MUNDARI
-        | script::GARAY | script::GURUNG_KHEMA | script::KIRAT_RAI | script::OL_ONAL
-        | script::SUNUWAR | script::TODHRI | script::TULU_TIGALARI
-        | script::BERIA_ERFE | script::SIDETIC | script::TAI_YO | script::TOLONG_SIKI
-        => {
-            if gsub_script == Some(hb_tag_t::default_script()) ||
-               gsub_script == Some(hb_tag_t::new(b"latn")) {
+        | script::KAWI
+        | script::NAG_MUNDARI
+        | script::GARAY
+        | script::GURUNG_KHEMA
+        | script::KIRAT_RAI
+        | script::OL_ONAL
+        | script::SUNUWAR
+        | script::TODHRI
+        | script::TULU_TIGALARI
+        | script::BERIA_ERFE
+        | script::SIDETIC
+        | script::TAI_YO
+        | script::TOLONG_SIKI => {
+            if gsub_script == Some(hb_tag_t::default_script())
+                || gsub_script == Some(hb_tag_t::new(b"latn"))
+            {
                 &DEFAULT_SHAPER
             } else {
                 &crate::hb::ot_shaper_use::UNIVERSAL_SHAPER
             }
         }
 
-        _ => &DEFAULT_SHAPER
+        _ => &DEFAULT_SHAPER,
     }
 }

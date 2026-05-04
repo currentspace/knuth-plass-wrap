@@ -1,3 +1,3 @@
-// Root entry — re-exports everything from core and react
+// Root entry: core-only. React APIs are available from
+// "knuth-plass-wrap/react" so vanilla users do not import React.
 export * from "./core";
-export * from "./react";
