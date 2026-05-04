@@ -13,6 +13,9 @@ import { registerFontBinary } from "../lib/resolve-font-binary";
 import type { WdthRange } from "../lib/types";
 import { Card } from "./Card";
 
+// Browser shapers can land a few pixels wider than harfrust on CI/Linux.
+const BROWSER_LAYOUT_SAFETY_PX = 10;
+
 export interface KPHarfrustCardProps {
   text: string;
   width: number;
@@ -72,6 +75,7 @@ export function KPHarfrustCard({
   style: containerStyle,
 }: KPHarfrustCardProps): ReactNode {
   const deferredWidth = useDeferredValue(width);
+  const layoutWidth = Math.max(1, deferredWidth - BROWSER_LAYOUT_SAFETY_PX);
   const simDem = similarity ? SIMILAR_DEM : 0;
   const lh = lineHeight ?? Math.round(fontSize * 1.6);
 
@@ -111,7 +115,7 @@ export function KPHarfrustCard({
     return layoutParagraph(effectiveBinary, {
       text,
       fontSize,
-      lineWidth: deferredWidth,
+      lineWidth: layoutWidth,
       fontWeight,
       liga,
       opsz: wasmOpsz,
@@ -126,7 +130,7 @@ export function KPHarfrustCard({
   }, [
     text,
     fontSize,
-    deferredWidth,
+    layoutWidth,
     hyphenate,
     simDem,
     effectiveBinary,
