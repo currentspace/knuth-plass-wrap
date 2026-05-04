@@ -67,6 +67,30 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function compareSemver(left, right) {
+  const parse = (version) => version.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const a = parse(left);
+  const b = parse(right);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const delta = (a[i] ?? 0) - (b[i] ?? 0);
+    if (delta !== 0) return delta;
+  }
+  return 0;
+}
+
+function npmVersion() {
+  return run("npm", ["--version"], { capture: true }).stdout.trim();
+}
+
+function assertTrustedPublishRuntime() {
+  const version = npmVersion();
+  if (compareSemver(version, "11.5.1") < 0) {
+    throw new Error(
+      `Trusted publishing requires npm CLI 11.5.1 or newer; current npm is ${version}.`,
+    );
+  }
+}
+
 function sleep(ms) {
   Atomics.wait(SLEEP_BUFFER, 0, 0, ms);
 }
@@ -209,6 +233,10 @@ if (!existsSync(join(ROOT_DIR, "pnpm-lock.yaml"))) {
 
 console.log(`Publishing release package for ${manifest.name}@${manifest.version}`);
 console.log(`Mode: ${dryRun ? "dry-run" : "publish"}; npm dist-tag: ${distTag}`);
+
+if (provenance) {
+  assertTrustedPublishRuntime();
+}
 
 assertVersionNotPublished(manifest.name, manifest.version);
 buildPackage();
