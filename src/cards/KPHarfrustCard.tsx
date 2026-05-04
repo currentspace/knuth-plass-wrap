@@ -16,6 +16,19 @@ import { Card } from "./Card";
 // Browser shapers can land a few pixels wider than harfrust on CI/Linux.
 const BROWSER_LAYOUT_SAFETY_PX = 10;
 
+function intersectWdthRanges(
+  provided: WdthRange | null | undefined,
+  rendered: WdthRange | null,
+): WdthRange | null {
+  if (!provided) return rendered;
+  if (!rendered) return null;
+
+  const min = Math.max(provided.min, rendered.min);
+  const max = Math.min(provided.max, rendered.max);
+  if (min >= 100 && max <= 100) return null;
+  return { min, max };
+}
+
 export interface KPHarfrustCardProps {
   text: string;
   width: number;
@@ -105,9 +118,8 @@ export function KPHarfrustCard({
   use(fontReady);
 
   const effectiveWdthRange = useMemo(() => {
-    if (wdthRange) return wdthRange;
-    const detected = detectWdthSupport(`${fontSize}px ${scopedFamily}`, liga);
-    return detected;
+    const renderedRange = detectWdthSupport(`${fontSize}px ${scopedFamily}`, liga);
+    return intersectWdthRanges(wdthRange, renderedRange);
   }, [wdthRange, fontSize, scopedFamily, liga]);
 
   const lines = useMemo(() => {
@@ -141,7 +153,7 @@ export function KPHarfrustCard({
     wasmItal,
   ]);
 
-  const hasHz = wdthRange && lines.some((l) => l.wdth !== 100);
+  const hasHz = effectiveWdthRange && lines.some((l) => l.wdth !== 100);
   const note = `${lines.length} lines${hasHz ? " · Hz" : ""}`;
   const shaping = shapingCSS(liga) as CSSProperties;
 
